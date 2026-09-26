@@ -19,10 +19,10 @@ import {
   QWEN_SIZES, codexStdin, configMissing, fillTemplate, loadConfig, maskConfig, modelKind, openaiGenerate, openaiRequest,
   parseEnv, qwenEndpoint, qwenGenerate, qwenWorkflow,
 } from './models.mjs';
-import { renderHtml, safeName } from './novel-character-refs.mjs';
+import { renderHtml, safeName } from './character-refs.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const CLI = join(here, 'novel-character-refs.mjs');
+const CLI = join(here, 'character-refs.mjs');
 const INTAKE = JSON.parse(readFileSync(join(here, '..', 'examples', '阿禾-intake.json'), 'utf8'));
 const clone = (x) => structuredClone(x);
 let passed = 0;

@@ -2,9 +2,9 @@
 [![English](https://img.shields.io/badge/English-8b1a1a?style=for-the-badge)](README.en.md)
 [![Follow on X](https://img.shields.io/badge/Follow-%40eternityspring-b07070?style=for-the-badge&labelColor=8b1a1a&logo=x&logoColor=f2e3e3)](https://x.com/eternityspring)
 
-# novel-character-refs
+# character-refs
 
-**Actually generates** character reference images for AI short drama. Describe a character in one message and get a set of reference images ready to attach to video models (H3 / Wan / Seedance).
+**Actually generates** reference images for a character from any story — a novel adaptation, your own original story, or a one-off character; no source text needed. Describe a character in one message and get a set of reference images ready to attach to video models (H3 / Wan / Seedance).
 
 **Each set has a single root**: a front full-body anchor. It is the only text-to-image generation; the headshot, profile, back view and details all reference only that anchor, never each other — so a bad image is regenerated on its own without knocking anything else over.
 
@@ -41,7 +41,7 @@ Four options, chosen on first use and kept after that:
 Every image carries a label `character/outfit/view/version` (e.g. `阿禾/default/face-front/v2`) in its filename, in `asset.json` and in the PNG metadata.
 
 ```bash
-node scripts/novel-character-refs.mjs gen 阿禾/asset.json detail-neck --model codex   # regenerate one image as a new version
+node scripts/character-refs.mjs gen 阿禾/asset.json detail-neck --model codex   # regenerate one image as a new version
 ```
 
 Old versions are never overwritten. Only three things are frozen: the anchor file, the style snapshot and the text description. When one changes, whatever depends on it is marked stale: a new anchor makes everything else stale; a new headshot makes the hair / neckline details stale; an edited description makes everything stale. Stale images are marked, never deleted.
@@ -57,14 +57,14 @@ Checked in code; `check` exits 1 on failure: side length 300–5760 px, aspect r
 ## Command line
 
 ```bash
-node scripts/novel-character-refs.mjs config --model qwen --confirm-anchor yes --qwen-env-file ~/comfy.env
-node scripts/novel-character-refs.mjs intake-check examples/阿禾-intake.json
-node scripts/novel-character-refs.mjs new examples/阿禾-intake.json --out out/
-node scripts/novel-character-refs.mjs gen out/阿禾/asset.json --tier 1
-node scripts/novel-character-refs.mjs confirm out/阿禾/asset.json
-node scripts/novel-character-refs.mjs gen out/阿禾/asset.json --tier 2 --reason "close-up in E03"
-node scripts/novel-character-refs.mjs check out/阿禾/asset.json
-node scripts/novel-character-refs.mjs render out/阿禾/asset.json --out out/character-refs.html
+node scripts/character-refs.mjs config --model qwen --confirm-anchor yes --qwen-env-file ~/comfy.env
+node scripts/character-refs.mjs intake-check examples/阿禾-intake.json
+node scripts/character-refs.mjs new examples/阿禾-intake.json --out out/
+node scripts/character-refs.mjs gen out/阿禾/asset.json --tier 1
+node scripts/character-refs.mjs confirm out/阿禾/asset.json
+node scripts/character-refs.mjs gen out/阿禾/asset.json --tier 2 --reason "close-up in E03"
+node scripts/character-refs.mjs check out/阿禾/asset.json
+node scripts/character-refs.mjs render out/阿禾/asset.json --out out/character-refs.html
 ```
 
 ## Selftest

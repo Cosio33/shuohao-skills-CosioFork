@@ -2,9 +2,9 @@
 [![English](https://img.shields.io/badge/English-f2e3e3?style=for-the-badge&labelColor=f2e3e3&color=b07070)](README.en.md)
 [![关注作者 X](https://img.shields.io/badge/%E5%85%B3%E6%B3%A8%E4%BD%9C%E8%80%85-%40eternityspring-b07070?style=for-the-badge&labelColor=8b1a1a&logo=x&logoColor=f2e3e3)](https://x.com/eternityspring)
 
-# novel-character-refs
+# character-refs
 
-给 AI 短剧**真出**角色参考图。一段话描述角色，出一组能直接挂进视频模型（H3 / Wan / Seedance）的参考图。
+给任何故事里的角色**真出**参考图——小说改编、自己原创的故事、单独设计一个角色都行，不需要小说原文。一段话描述角色，出一组能直接挂进视频模型（H3 / Wan / Seedance）的参考图。
 
 **一组图只有一个根**：正面全身锚点。只有它是文生图，大头照、侧面、背面、细节图都只参考这张锚点，
 图与图之间不再互相参考——任何一张出坏了，单独重出这一张，不牵连别的。
@@ -48,7 +48,7 @@ Qwen 锚点 + GPT 派生、GPT 锚点 + Qwen 派生、同一组里混用，实�
 每张图都有标识 `角色/造型/视图/版本`（如 `阿禾/default/face-front/v2`），写在文件名、`asset.json` 和 PNG 元数据三处。
 
 ```bash
-node scripts/novel-character-refs.mjs gen 阿禾/asset.json detail-neck --model codex   # 单独重出一张，存成新版本
+node scripts/character-refs.mjs gen 阿禾/asset.json detail-neck --model codex   # 单独重出一张，存成新版本
 ```
 
 重出不覆盖旧版。冻结的只有三样：锚点文件、画风快照、文字描述。任何一样变了，依赖它的图标成过期：
@@ -77,14 +77,14 @@ node scripts/novel-character-refs.mjs gen 阿禾/asset.json detail-neck --model 
 ## 命令行直接使用
 
 ```bash
-node scripts/novel-character-refs.mjs config --model qwen --confirm-anchor yes --qwen-env-file ~/comfy.env
-node scripts/novel-character-refs.mjs intake-check examples/阿禾-intake.json
-node scripts/novel-character-refs.mjs new examples/阿禾-intake.json --out out/
-node scripts/novel-character-refs.mjs gen out/阿禾/asset.json --tier 1
-node scripts/novel-character-refs.mjs confirm out/阿禾/asset.json
-node scripts/novel-character-refs.mjs gen out/阿禾/asset.json --tier 2 --reason "E03 有面部特写"
-node scripts/novel-character-refs.mjs check out/阿禾/asset.json
-node scripts/novel-character-refs.mjs render out/阿禾/asset.json --out out/character-refs.html
+node scripts/character-refs.mjs config --model qwen --confirm-anchor yes --qwen-env-file ~/comfy.env
+node scripts/character-refs.mjs intake-check examples/阿禾-intake.json
+node scripts/character-refs.mjs new examples/阿禾-intake.json --out out/
+node scripts/character-refs.mjs gen out/阿禾/asset.json --tier 1
+node scripts/character-refs.mjs confirm out/阿禾/asset.json
+node scripts/character-refs.mjs gen out/阿禾/asset.json --tier 2 --reason "E03 有面部特写"
+node scripts/character-refs.mjs check out/阿禾/asset.json
+node scripts/character-refs.mjs render out/阿禾/asset.json --out out/character-refs.html
 ```
 
 ## 文件
@@ -92,7 +92,7 @@ node scripts/novel-character-refs.mjs render out/阿禾/asset.json --out out/cha
 ```
 SKILL.md                    给 agent 读的工作流
 scripts/
-  novel-character-refs.mjs  config / intake-check / new / gen / confirm / check / render
+  character-refs.mjs  config / intake-check / new / gen / confirm / check / render
   core.mjs                  视图、提示词、输入校验、版本与过期、检查门
   models.mjs                四个出图适配器
   png.mjs                   PNG 读写与元数据（零依赖）

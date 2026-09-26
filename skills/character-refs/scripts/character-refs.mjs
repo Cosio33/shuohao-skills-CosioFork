@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// novel-character-refs —— 角色参考图：一张确认过的正面全身照为根，按档位往上加图。
+// character-refs —— 角色参考图：一张确认过的正面全身照为根，按档位往上加图。
 // 零依赖，node >= 18 直接跑。出图走 models.mjs 的适配器；其余全部确定性。
 
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -234,7 +234,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')lb.classList.remove(
 /* ------------------------------------------------------------------ */
 /* CLI                                                                   */
 /* ------------------------------------------------------------------ */
-const USAGE = `novel-character-refs.mjs —— 角色参考图
+const USAGE = `character-refs.mjs —— 角色参考图
 
   config [--show]                          初次设置 / 查看配置（配置存在 skill 目录的 config.local.json）
          [--model m]                       主图与派生图都用 m（qwen / codex / openai / custom:<名字>）

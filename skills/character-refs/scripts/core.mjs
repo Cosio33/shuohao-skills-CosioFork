@@ -1,5 +1,5 @@
 // 角色参考图的确定性核心：视图与档位、提示词拼装、输入校验、版本与过期、检查门。
-// 不调用任何模型——出图在 models.mjs，命令行在 novel-character-refs.mjs。
+// 不调用任何模型——出图在 models.mjs，命令行在 character-refs.mjs。
 
 import { createHash } from 'node:crypto';
 import { decode, pngInfo, isPng, withText } from './png.mjs';

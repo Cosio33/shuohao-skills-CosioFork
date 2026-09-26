@@ -47,8 +47,8 @@
 ## custom:<名字> —— 自定义命令
 
 ```bash
-node scripts/novel-character-refs.mjs config --custom 'mine=mytool --prompt-file {prompt_file} --neg-file {negative_file} --ref {refs} --size {width}x{height} --out {out}'
-node scripts/novel-character-refs.mjs config --model custom:mine
+node scripts/character-refs.mjs config --custom 'mine=mytool --prompt-file {prompt_file} --neg-file {negative_file} --ref {refs} --size {width}x{height} --out {out}'
+node scripts/character-refs.mjs config --model custom:mine
 ```
 
 占位符（全部自动加引号，未知的原样保留）：

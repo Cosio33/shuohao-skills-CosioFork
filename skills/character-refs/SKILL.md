@@ -1,12 +1,14 @@
 ---
-name: novel-character-refs
+name: character-refs
 description: |
-  给 AI 短剧出角色参考图：一段话描述角色，拆成分层字段、补全后确认，
+  给任何故事里的角色真出参考图（小说改编、自己原创的故事、单独设计一个角色都行，不需要小说原文）：
+  一段话描述角色，拆成分层字段、补全后确认，
   先出一张正面全身锚点，其余视图（大头照、90° 侧面、背面、细节、45° 大头照）都只参考这张锚点，
   按需分档出图。每张图带标识、可单独重出，重出后自动标出哪些图过期。
-  支持 Qwen Image（ComfyUI）、codex 内置出图、OpenAI Images API（GPT Image 2）和自定义命令，主图与派生图可用不同模型。
+  支持 Qwen Image（ComfyUI）、codex 内置出图、OpenAI Images API（GPT Image 2）和自定义命令，主图与派生图可以使用不同模型。
   产出 asset.json + 一组 PNG + 双击就能开的报告。零依赖。
-  Use when asked to 出角色图、角色参考图、角色定妆照、三视图、character reference images。
+  只要提示词、不出图的话使用 novel-characters。
+  Use when asked to 出角色图、做角色参考图、给我的角色出图、定妆照、真出三视图、character reference images。
 allowed-tools:
   - Read
   - Write
@@ -14,10 +16,11 @@ allowed-tools:
 metadata:
   version: 2.1.0
   triggers:
-    - novel-character-refs
+    - character-refs
     - 角色参考图
     - 角色图
     - 出角色图
+    - 创建角色
     - 定妆照
     - 三视图
     - character reference images
@@ -30,12 +33,12 @@ metadata:
     - codex
 ---
 
-## novel-character-refs
+## character-refs
 
-输入一段角色描述，输出一组角色参考图：**一张正面全身锚点，其余每张都只参考这张锚点**。
+输入一段角色描述，输出一组角色参考图——**角色从哪来都行**：小说改编、自己编的故事、临时想到的一个人。**一张正面全身锚点，其余每张都只参考这张锚点**。
 给视频模型（H3 / Wan / Seedance）当参考图使用，也给人看。
 
-`{baseDir}` = 本文件所在目录。脚本 `{baseDir}/scripts/novel-character-refs.mjs`，零依赖，`node` 直接跑。
+`{baseDir}` = 本文件所在目录。脚本 `{baseDir}/scripts/character-refs.mjs`，零依赖，`node` 直接跑。
 
 **这是仓库里唯一真出图的 skill。**其余 skill 只交提示词，因为出图那一刻才能决定模型和画风；
 这个 skill 就是「那一刻」——模型在 Step 0 由用户选定，画风是写实照片。
@@ -66,7 +69,7 @@ metadata:
 ### Step 0 — 初次设置（每台机器一次）
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs config --show
+node {baseDir}/scripts/character-refs.mjs config --show
 ```
 
 输出末尾写「还缺：……」就要问用户这三件事，**一次问完**：
@@ -82,7 +85,7 @@ node {baseDir}/scripts/novel-character-refs.mjs config --show
    选 `no` 则自动放行，报告里标「未经人工确认」
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs config --model qwen --confirm-anchor yes --qwen-env-file <.env 路径>
+node {baseDir}/scripts/character-refs.mjs config --model qwen --confirm-anchor yes --qwen-env-file <.env 路径>
 # 分开设置：--anchor-model codex --derive-model qwen
 ```
 
@@ -94,7 +97,7 @@ node {baseDir}/scripts/novel-character-refs.mjs config --model qwen --confirm-an
 用户**一段话**描述角色就够了，不要一项一项问。你（模型）来拆：
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs intake-template
+node {baseDir}/scripts/character-refs.mjs intake-template
 ```
 
 照模板把描述拆进各字段，写到 `<工作目录>/<角色名>-intake.json`。规则（详见 `references/intake.md`）：
@@ -105,7 +108,7 @@ node {baseDir}/scripts/novel-character-refs.mjs intake-template
 - 服装分 `top` / `bottom`——大头照只用上装，带上下装模型就会把镜头拉远
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs intake-check <intake.json>
+node {baseDir}/scripts/character-refs.mjs intake-check <intake.json>
 ```
 
 有问题按报错改到通过。通过后它打印**确认表**，原样给用户看，推断和默认的项带标记。
@@ -114,7 +117,7 @@ node {baseDir}/scripts/novel-character-refs.mjs intake-check <intake.json>
 ### Step 2 — 建资产
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs new <intake.json> --out <输出目录>
+node {baseDir}/scripts/character-refs.mjs new <intake.json> --out <输出目录>
 ```
 
 建出 `<输出目录>/<角色名>/asset.json`。画风层（写实照片）此时整份快照进资产，之后改全局画风不影响已有角色。
@@ -122,13 +125,13 @@ node {baseDir}/scripts/novel-character-refs.mjs new <intake.json> --out <输出�
 ### Step 3 — 出锚点
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs gen <asset.json> --tier 1
+node {baseDir}/scripts/character-refs.mjs gen <asset.json> --tier 1
 ```
 
 配置了确认：**把图给用户看**（报告或直接打开 PNG），用户说可以再
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs confirm <asset.json>
+node {baseDir}/scripts/character-refs.mjs confirm <asset.json>
 ```
 
 不满意就再跑一次 `gen <asset.json> front-full`（出 v2，可 `--seed` 换种子、`--model` 换模型），
@@ -137,7 +140,7 @@ node {baseDir}/scripts/novel-character-refs.mjs confirm <asset.json>
 ### Step 4 — 按需升档
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs gen <asset.json> --tier 2 --reason "E03 有面部特写、E05 有背影"
+node {baseDir}/scripts/character-refs.mjs gen <asset.json> --tier 2 --reason "E03 有面部特写、E05 有背影"
 ```
 
 `--reason` 写为什么升档，记进资产。也可以只出某几张：`gen <asset.json> face-front back-full`。
@@ -145,14 +148,14 @@ node {baseDir}/scripts/novel-character-refs.mjs gen <asset.json> --tier 2 --reas
 ### Step 5 — 检查与重出
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs check <asset.json>
+node {baseDir}/scripts/character-refs.mjs check <asset.json>
 ```
 
 每张图过代码门（尺寸 300–5760、宽高比 0.4–2.5、比例对得上、≤20MB、背景够白），再看过期。
 **有问题 exit 1。**门没过或过期的，单独重出那一张：
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs gen <asset.json> detail-neck --model codex
+node {baseDir}/scripts/character-refs.mjs gen <asset.json> detail-neck --model codex
 ```
 
 门里「背景够白」对全身图查四边，对大头照只查上边和两侧上半段（身体本来就顶到下边），细节图跳过并明说。
@@ -161,7 +164,7 @@ node {baseDir}/scripts/novel-character-refs.mjs gen <asset.json> detail-neck --m
 ### Step 6 — 报告
 
 ```bash
-node {baseDir}/scripts/novel-character-refs.mjs render <asset.json>... --out <输出目录>/character-refs.html
+node {baseDir}/scripts/character-refs.mjs render <asset.json>... --out <输出目录>/character-refs.html
 ```
 
 多个角色可以一起出。第一档只有一张卡片；第二档起是设定图版面（左大头照，右上正面 / 侧面 / 背面，右下细节条），
