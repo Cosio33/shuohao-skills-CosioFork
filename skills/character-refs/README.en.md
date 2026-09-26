@@ -52,7 +52,7 @@ Checked in code; `check` exits 1 on failure: side length 300–5760 px, aspect r
 
 ## Report
 
-`render` writes a self-contained HTML page: a single card at tier 1, a character-sheet layout from tier 2 (headshot on the left, front / profile / back top right, detail strip bottom right), details hidden by default with a one-click toggle. The layout is done in code rather than generated as one composite image — a composite used as a reference makes models draw the person smaller. The report UI is Chinese only for now.
+`render` writes a self-contained HTML page: a single card at tier 1, a character-sheet layout from tier 2 (headshot on the left, front / profile / back top right, detail strip bottom right), details hidden by default with a one-click toggle. The layout is done in code rather than generated as one composite image — a composite used as a reference makes models draw the person smaller. The report UI ships in Chinese, English and Japanese (`render --lang en`); for any other language the agent translates the UI strings on the spot. Character descriptions stay as written, and image prompts are always English.
 
 ## Command line
 
@@ -73,7 +73,7 @@ node scripts/character-refs.mjs render out/阿禾/asset.json --out out/character
 node scripts/selftest.mjs
 ```
 
-140 assertions, no model calls, no quota. The Qwen and GPT Image adapters are checked against local mock servers; the full pipeline runs end to end with a custom command that produces blank white images.
+171 assertions, no model calls, no quota. The Qwen and GPT Image adapters are checked against local mock servers; the full pipeline runs end to end with a custom command that produces blank white images.
 
 ## Known limitations
 

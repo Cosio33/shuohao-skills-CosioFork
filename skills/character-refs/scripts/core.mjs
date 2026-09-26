@@ -3,6 +3,7 @@
 
 import { createHash } from 'node:crypto';
 import { decode, pngInfo, isPng, withText } from './png.mjs';
+import { BUILTIN, LANG_RE, fmt, uiFor, uiMissing } from './i18n.mjs';
 
 /* ------------------------------------------------------------------ */
 /* 视图与档位                                                            */
@@ -44,7 +45,7 @@ export function detailViews(outfit) {
     const part = d.slot === 'custom' ? d.part : DETAIL_SLOTS[d.slot]?.part;
     out[`detail-${d.slot === 'custom' ? d.id : d.slot}`] = {
       tier: 3, ratio: '1:1', kind: 'detail', part, detail: d,
-      label: d.slot === 'custom' ? (d.zh ?? d.id) : DETAIL_SLOTS[d.slot].label,
+      label: d.slot === 'custom' ? (human(d) || d.id) : DETAIL_SLOTS[d.slot].label,
       refs: FACE_PARTS.has(part) ? ['front-full', 'face-front'] : ['front-full'],
     };
   }
@@ -89,6 +90,8 @@ const bare = (s) => clause(s).replace(/^(a|an|the)\s+/i, '');
 /** 句首大写的普通词放进句中要小写（One thick braid → one thick braid）；专有名词（第二个字母也大写的缩写等）不动。 */
 const lowerFirst = (s) => { const t = clause(s); return /^[A-Z][a-z]/.test(t) && !/^(I|Chinese|Japanese|Korean)\b/.test(t) ? t[0].toLowerCase() + t.slice(1) : t; };
 const en = (field) => clause(field?.en ?? field);
+/** 给人看的那段描述：新字段 text，旧输入的 zh 照样认。 */
+export const human = (field) => String(field?.text ?? field?.zh ?? '').trim();
 
 export function pronouns(gender) {
   return gender === 'male' ? { s: 'he', o: 'him', p: 'his' } : { s: 'she', o: 'her', p: 'her' };
@@ -101,6 +104,8 @@ export function nounOf(age, gender) {
 }
 
 /** 皮肤缺省按年龄给——皮肤粗糙程度是角色属性，不是画风。 */
+/** 缺省皮肤按年龄分三档；给人看的文字按语言从文案表取（skinBand）。 */
+export const skinBand = (age) => (age < 25 ? 'young' : age < 50 ? 'adult' : 'old');
 export function defaultSkin(age) {
   if (age < 25) return { en: 'Young skin with faint pores on the nose and cheeks and a slightly uneven natural tone, no makeup', zh: '年轻皮肤，鼻翼脸颊有细微毛孔，肤色自然略不匀，素颜' };
   if (age < 50) return { en: 'Natural adult skin with visible pores and a slightly uneven tone', zh: '成年人的自然皮肤，可见毛孔，肤色略不匀' };
@@ -123,9 +128,9 @@ export function resolveLayers(asset, outfitId = 'default') {
   const c = { ...asset.layers, ...(outfit.overrides ?? {}) };
   return {
     identity: c.identity, face: c.face, hair: c.hair, build: c.build ?? null,
-    skin: c.skin ?? { ...defaultSkin(c.identity.age), source: 'default' },
+    skin: c.skin ?? { ...defaultSkin(c.identity.age), source: 'default', auto: 'skin' },
     top: outfit.top, bottom: outfit.bottom, details: outfit.details ?? [],
-    backCue: outfit.backCue ?? c.backCue ?? { ...defaultBackCue(c, outfit), source: 'default' },
+    backCue: outfit.backCue ?? c.backCue ?? { ...defaultBackCue(c, outfit), source: 'default', auto: 'back' },
   };
 }
 
@@ -226,7 +231,7 @@ export function intakeProblems(x) {
   const need = (f, label) => {
     if (!f || typeof f !== 'object') { p.push(`缺 ${label}`); return; }
     if (!String(f.en ?? '').trim()) p.push(`${label} 缺英文（en）——出图用英文`);
-    if (!String(f.zh ?? '').trim()) p.push(`${label} 缺中文（zh）——确认表给人看`);
+    if (!human(f)) p.push(`${label} 缺给人看的描述（text，用 lang 指定的语言）——确认表和报告要用`);
     if (f.source && !SOURCES[f.source]) p.push(`${label} 的 source 只能是 ${Object.keys(SOURCES).join(' / ')}`);
     if (CJK.test(String(f.en ?? ''))) p.push(`${label} 的英文里混了中日韩字符`);
     if (STYLE_WORDS.test(String(f.en ?? ''))) p.push(`${label} 写了画风词（${String(f.en).match(STYLE_WORDS)[0]}）——画风由项目画风层统一加，角色描述里不写`);
@@ -234,6 +239,12 @@ export function intakeProblems(x) {
     if (/\((inferred|推断)\)/i.test(String(f.en ?? ''))) p.push(`${label} 的英文里写了推断标记——标记只进确认表，写进提示词会被画出来`);
   };
   if (!String(x?.name ?? '').trim()) p.push('缺 name（角色名）');
+  const lang = x?.lang ?? 'zh';
+  if (!LANG_RE.test(String(lang))) p.push(`lang 要写语言代码（zh / en / ja / fr …），现在是 ${lang}`);
+  else if (!BUILTIN.includes(lang)) {
+    const miss = uiMissing(x?.ui);
+    if (miss.length) p.push(`lang ${lang} 不是内置语言（${BUILTIN.join(' / ')}），要带完整的 ui（运行 ui-template ${lang} 翻译后放进 ui 字段）；缺 ${miss.length} 项，如 ${miss.slice(0, 3).join('、')}`);
+  }
   const id = x?.identity;
   need(id, 'identity 身份');
   if (id) {
@@ -267,26 +278,29 @@ export function intakeProblems(x) {
   return p;
 }
 
-/** 确认表：给人看，中文，每项标来源。缺省值也列出来，标「默认」。 */
 /** 终端显示宽度：中日韩与全角算 2 格，其余（含 °）算 1 格。 */
 export const displayWidth = (s) => [...s].reduce((n, ch) => n + (/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(ch) ? 2 : 1), 0);
 export const padDisplay = (s, w) => s + ' '.repeat(Math.max(0, w - displayWidth(s)));
 
+/** 确认表：给人看，按 lang 出，每项标来源。缺省值也列出来，标「默认」。 */
 export function confirmTable(x) {
-  const tag = (f) => (f?.source && f.source !== 'stated' ? `  〔${SOURCES[f.source]}〕` : '');
+  const ui = uiFor(x.lang ?? 'zh', x.ui);
+  const tag = (f) => (f?.source && f.source !== 'stated' ? `  〔${ui.sources[f.source]}〕` : '');
   const id = x.identity;
-  const skin = x.skin ?? { ...defaultSkin(id.age), source: 'default' };
-  const back = x.backCue ?? { zh: defaultBackCue(x, x.outfit).zh, source: 'default' };
+  const skin = x.skin ?? { text: ui.defaultSkin[skinBand(id.age)], source: 'default' };
+  const back = x.backCue ?? { text: ui.defaultBack, source: 'default' };
+  const F = ui.fields;
   const rows = [
-    ['身份', `${id.zh}（${id.age} 岁 · ${id.gender === 'male' ? '男' : '女'}）`, id],
-    ['脸型五官', x.face.zh, x.face], ['发型', x.hair.zh, x.hair],
-    ...(x.build ? [['身形', x.build.zh, x.build]] : []),
-    ['上装', x.outfit.top.zh, x.outfit.top], ['下装', x.outfit.bottom.zh, x.outfit.bottom],
-    ['皮肤', skin.zh, skin], ['背面', back.zh, back],
-    ...(x.outfit.details ?? []).map((d) => [`细节 · ${d.slot === 'custom' ? d.id : DETAIL_SLOTS[d.slot].label}`, d.zh, d]),
+    [F.identity, fmt(ui.identityLine, { text: human(id), age: id.age, gender: ui[id.gender] ?? id.gender }), id],
+    [F.face, human(x.face), x.face], [F.hair, human(x.hair), x.hair],
+    ...(x.build ? [[F.build, human(x.build), x.build]] : []),
+    [F.top, human(x.outfit.top), x.outfit.top], [F.bottom, human(x.outfit.bottom), x.outfit.bottom],
+    [F.skin, human(skin), skin], [F.backCue, human(back), back],
+    ...(x.outfit.details ?? []).map((d) => [fmt(F.detail, { x: d.slot === 'custom' ? d.id : ui.slots[d.slot] }), human(d), d]),
   ];
   const w = Math.max(...rows.map(([k]) => displayWidth(k)));
-  return [`${x.name} · ${x.outfit.label ?? '常态'} · 待确认`, ...rows.map(([k, v, f]) => `  ${padDisplay(k, w)}  ${v}${tag(f)}`)].join('\n');
+  return [fmt(ui.confirmTitle, { name: x.name, outfit: x.outfit.label ?? ui.outfitDefault }),
+    ...rows.map(([k, v, f]) => `  ${padDisplay(k, w)}  ${v}${tag(f)}`)].join('\n');
 }
 
 /** 由确认过的输入建角色资产。 */
@@ -299,10 +313,12 @@ export function assetFromIntake(intake, look = DEFAULT_LOOK) {
   return {
     name: x.name,
     ...(x.source ? { source: x.source } : {}),
+    lang: x.lang ?? 'zh',                   // 确认表与报告的语言；提示词永远英文
+    ...(x.ui ? { ui: x.ui } : {}),          // 非内置语言的自译文案
     layers,
     outfits: {
       [id]: {
-        label: x.outfit.label ?? '常态',
+        label: x.outfit.label ?? uiFor(x.lang ?? 'zh', x.ui).outfitDefault,
         top: x.outfit.top, bottom: x.outfit.bottom, details: x.outfit.details ?? [],
         overrides: x.outfit.overrides ?? {},
         look: { ...look },                  // 画风快照：之后项目改画风，不影响这组图
@@ -329,20 +345,26 @@ export const current = (outfit, viewId) => {
   return v ? v.versions.find((x) => x.v === v.current) ?? null : null;
 };
 
-export function staleReasons(asset, outfitId, viewId) {
+/** 过期原因（结构化，报告按语言翻译）：{code: layers | look | ref-missing | ref-changed, view?, v?} */
+export function staleCodes(asset, outfitId, viewId) {
   const outfit = asset.outfits[outfitId];
   const cur = current(outfit, viewId);
   if (!cur) return [];
   const why = [];
-  if (cur.layersHash !== layersHash(resolveLayers(asset, outfitId))) why.push('文字描述改过了');
-  if (cur.lookHash !== lookHash(outfit.look)) why.push('画风快照变了');
+  if (cur.layersHash !== layersHash(resolveLayers(asset, outfitId))) why.push({ code: 'layers' });
+  if (cur.lookHash !== lookHash(outfit.look)) why.push({ code: 'look' });
   for (const r of cur.refs ?? []) {
     const now = current(outfit, r.view);
-    if (!now) why.push(`参考图 ${r.view} 不见了`);
-    else if (now.v !== r.v || now.sha256 !== r.sha256) why.push(`参考图 ${r.view} 已换成 v${now.v}`);
+    if (!now) why.push({ code: 'ref-missing', view: r.view });
+    else if (now.v !== r.v || now.sha256 !== r.sha256) why.push({ code: 'ref-changed', view: r.view, v: now.v });
   }
   return why;
 }
+const STALE_KEY = { layers: 'layers', look: 'look', 'ref-missing': 'refMissing', 'ref-changed': 'refChanged' };
+export const staleText = (c, ui) => fmt(ui.stale[STALE_KEY[c.code]], c);
+
+/** 过期原因的文字（命令行用中文；报告用 staleCodes + staleText 按语言出）。 */
+export const staleReasons = (asset, outfitId, viewId, ui = uiFor('zh')) => staleCodes(asset, outfitId, viewId).map((c) => staleText(c, ui));
 
 /** 锚点是否可以用来派生：确认过（true）或配置为自动确认（'auto'），且没过期。 */
 export function anchorUsable(asset, outfitId) {

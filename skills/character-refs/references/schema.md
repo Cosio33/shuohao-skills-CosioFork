@@ -7,9 +7,11 @@
 {
   "name": "阿禾",                     // 只用于文件名、标识和报告，不进提示词
   "source": "样例 · 茶山",             // 可省
+  "lang": "zh",                       // 确认表与报告的语言；没有这个字段按 zh
+  "ui": { … },                        // 只有非内置语言才有：自译的界面文案
   "layers": {                         // 角色层：换造型也不变的
-    "identity": { "age": 16, "gender": "female", "en": "…", "zh": "…", "source": "stated" },
-    "face":  { "en": "…", "zh": "…", "source": "stated" },
+    "identity": { "age": 16, "gender": "female", "en": "…", "text": "…", "source": "stated" },
+    "face":  { "en": "…", "text": "…", "source": "stated" },   // en 进提示词；text 给人看（旧资产是 zh，照样认）
     "hair":  { … },
     "build": { … },                   // 可省
     "skin":  { … },                   // 可省，省了按年龄补
@@ -18,9 +20,9 @@
   "outfits": {                        // 造型层；v1 只有 default
     "default": {
       "label": "常态 · 采茶装",
-      "top":    { "en": "…", "zh": "…", "source": "stated" },
+      "top":    { "en": "…", "text": "…", "source": "stated" },
       "bottom": { … },
-      "details": [ { "slot": "hair", "en": "…", "zh": "…", "source": "stated" }, … ],
+      "details": [ { "slot": "hair", "en": "…", "text": "…", "source": "stated" }, … ],
       "overrides": {},                // 这套造型要改的角色层，比如换发型：{ "hair": { … } }
       "look": { "id": "realistic-photo", "label": "…", "style": "…", "clean": "…", "neg": "…" },   // 画风快照
       "upgrades": [ { "tier": 2, "reason": "E03 有面部特写", "at": "…" } ],

@@ -20,6 +20,7 @@ import {
   parseEnv, qwenEndpoint, qwenGenerate, qwenWorkflow,
 } from './models.mjs';
 import { renderHtml, safeName } from './character-refs.mjs';
+import { BUILTIN, UI, fmt, uiFor, uiMissing, uiTemplate } from './i18n.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, 'character-refs.mjs');
@@ -89,6 +90,30 @@ bad((x) => { x.outfit.top.source = 'guess'; }, 'source', 'source 只收三种');
   eq(intakeProblems(x).length, 0, '合规的自定义细节放行');
 }
 {
+  const x = clone(INTAKE);
+  for (const f of [x.identity, x.face, x.hair, x.outfit.top]) { f.zh = f.text; delete f.text; }
+  eq(intakeProblems(x).length, 0, '旧输入写 zh 而不是 text，照样认');
+  ok(confirmTable(x).includes('十六岁采茶姑娘'), '旧输入的 zh 进确认表');
+}
+bad((x) => { delete x.face.text; }, 'text', '缺给人看的描述被拦');
+bad((x) => { x.lang = 'Chinese'; }, '语言代码', 'lang 不是语言代码被拦');
+bad((x) => { x.lang = 'fr'; }, 'ui-template fr', '非内置语言没带 ui 被拦，并指出怎么补');
+{
+  const x = clone(INTAKE);
+  x.lang = 'fr';
+  x.ui = { ...uiTemplate('fr'), fields: { ...UI.en.fields, identity: 'Identité' } };
+  eq(intakeProblems(x).length, 0, '非内置语言带齐 ui 就放行');
+  ok(confirmTable(x).startsWith('阿禾 · 常态 · 采茶装 · to confirm') && confirmTable(x).includes('Identité'), '确认表用自译文案');
+}
+{
+  const x = clone(INTAKE);
+  x.lang = 'en';
+  delete x.skin;
+  const t = confirmTable(x);
+  ok(t.includes('Identity') && t.includes('(16 · female)') && t.includes('〔inferred〕') && t.includes('〔default〕'), '英文确认表：标签、身份行、来源都是英文');
+  ok(t.includes(UI.en.defaultSkin.young) && t.includes(UI.en.defaultBack), '英文确认表：缺省皮肤与背面也是英文');
+}
+{
   const t = confirmTable(INTAKE);
   ok(t.includes('〔推断〕') && t.includes('〔默认〕'), '确认表标出推断与默认');
   ok(t.includes('背面') && t.includes('〔默认〕'), '没写背面：按发型与服装补，并标默认');
@@ -96,6 +121,15 @@ bad((x) => { x.outfit.top.source = 'guess'; }, 'source', 'source 只收三种');
   delete x.skin;
   ok(confirmTable(x).includes(defaultSkin(16).zh), '没写皮肤：按年龄补');
 }
+
+/* ---------------- 界面文案 ---------------- */
+for (const l of BUILTIN) eq(uiMissing(UI[l]).length, 0, `内置语言 ${l} 的文案齐全`);
+assert.throws(() => uiFor('fr'), /ui-template fr/); passed++;
+ok(uiFor('fr', uiTemplate('fr')).htmlLang === 'fr', '自译文案齐全即可使用');
+eq(uiFor('en', { title: 'Cast refs' }).title, 'Cast refs', '内置语言可以只覆盖几项');
+eq(uiFor('en', { title: 'Cast refs' }).without, UI.en.without, '没覆盖的照旧');
+eq(fmt('第 {n} 档 {x}', { n: 2 }), '第 2 档 {x}', '占位符只填给了的');
+ok(uiTemplate('fr')._说明.join('').includes('占位符'), '骨架带翻译说明');
 
 /* ---------------- 视图、档位、提示词 ---------------- */
 const A = assetFromIntake(INTAKE);
@@ -310,6 +344,26 @@ const serve = (handler) => new Promise((ok_) => {
   ok(html.includes('class="img stale"'), '过期的图在报告里标红框');
   ok(html.includes('角色描述（确认表）') && html.includes('推断'), '报告里带确认表与来源');
   ok(!/<link\s|<script\s+src=/.test(html), '报告零外部依赖');
+  ok(html.includes('<html lang="zh-CN">') && !html.includes('Without details'), '中文资产默认出中文报告');
+  const outEn = join(TMP, 'report-en.html');
+  ok(run('render', assetPath, '--lang', 'en', '--out', outEn).status === 0, 'render --lang en');
+  const en = readFileSync(outEn, 'utf8');
+  ok(en.includes('<html lang="en">') && en.includes('Without details') && en.includes('Front headshot') && en.includes('All views'), '英文报告：界面全换');
+  ok(en.includes('reference face-front is now v2') && en.includes('Stale'), '英文报告：过期原因也翻译');
+  ok(en.includes('Character description (confirmation table)') && en.includes('inferred') && en.includes('Style: Realistic photo'), '英文报告：确认表标签、来源、画风名');
+  ok(!/无细节图|全部视图|已过期|角色描述|未生成|锚点已确认/.test(en), '英文报告里没有残留的中文界面文案');
+  ok(en.includes('十六岁采茶姑娘'), '数据内容保持原文（角色描述是中文写的就还是中文）');
+  const uiFile = join(TMP, 'ui-fr.json');
+  writeFileSync(uiFile, JSON.stringify({ ...uiTemplate('fr'), title: 'Références de personnage' }));
+  ok(run('render', assetPath, '--lang', 'fr', '--out', outEn).status !== 0, '非内置语言没给 ui：render 报错，不出半中半英的报告');
+  ok(run('render', assetPath, '--lang', 'fr', '--ui', uiFile, '--out', outEn).status === 0 && readFileSync(outEn, 'utf8').includes('Références de personnage'), 'render --ui 传自译文案');
+  ok(JSON.parse(run('ui-template', 'fr').stdout).htmlLang === 'fr', 'ui-template 打印骨架');
+  const legacy = assetFromIntake(INTAKE);
+  delete legacy.lang;
+  ok(renderHtml([{ asset: legacy, assetDir: TMP }], TMP).includes('<html lang="zh-CN">'), '旧资产没有 lang：按中文出');
+  const enAsset = assetFromIntake({ ...clone(INTAKE), lang: 'en' });
+  eq(enAsset.lang, 'en', '资产记下语言');
+  ok(renderHtml([{ asset: enAsset, assetDir: TMP }], TMP).includes('No anchor yet'), '资产 lang 为 en：不传 --lang 也出英文');
   const one = renderHtml([{ asset: assetFromIntake(INTAKE), assetDir: TMP }], TMP);
   ok(one.includes('还没有锚点') && one.includes('第 0 档'), '一张图都没有时也能渲染');
 }

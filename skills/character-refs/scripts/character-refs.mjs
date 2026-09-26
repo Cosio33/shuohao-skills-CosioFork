@@ -7,8 +7,9 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ANCHOR, DEFAULT_LOOK, DETAIL_SLOTS, SOURCES, VIEWS, allViews, anchorUsable, assetFromIntake, buildPrompt, confirmTable, current,
-  intakeProblems, padDisplay, recordVersion, resolveLayers, resolveRefs, staleReasons, viewsOfTier,
+  human, intakeProblems, padDisplay, recordVersion, resolveLayers, resolveRefs, skinBand, staleCodes, staleReasons, staleText, viewsOfTier,
 } from './core.mjs';
+import { BUILTIN, fmt, uiFor, uiTemplate } from './i18n.mjs';
 import { CONFIG_PATH, configMissing, generate, loadConfig, maskConfig, modelKind, saveConfig } from './models.mjs';
 
 const readJson = (p) => JSON.parse(readFileSync(resolve(p), 'utf8'));
@@ -26,7 +27,8 @@ export const safeName = (s) => String(s).trim().replace(/[\s/\\:*?"<>|·]+/g, '-
 export const INTAKE_TEMPLATE = {
   _说明: [
     '用户一次性描述角色，由你（模型）拆进下面各字段；缺的自动补，并如实标 source：stated 原话 / inferred 推断 / default 默认。',
-    'en 进出图提示词：英文、不写角色名、不写画风词、不写 (inferred) 之类标记；zh 给人看。',
+    'lang 是确认表和报告的语言，照用户说话的语言填（zh / en / ja 内置；其他语言先运行 ui-template <lang> 翻一份放进 ui 字段）。',
+    'en 进出图提示词，永远英文：不写角色名、不写画风词、不写 (inferred) 之类标记；text 给人看，用 lang 指定的语言写。',
     '年龄、性别、年代推不出来就问用户——只有这三样不许自己编。',
     'build / skin / backCue 可省：皮肤按年龄给缺省，背面按发型与服装拼。细节默认四个槽位 hair / neck / sleeve / feet，',
     '只写这个部位本身（例：the tip of one of her long black braids, tied with faded red string），不写“特写”之类取景词——取景由脚本加。',
@@ -34,19 +36,20 @@ export const INTAKE_TEMPLATE = {
     '写完运行 intake-check，把打印出的确认表给用户看，确认后再 new。',
   ],
   name: '角色名（只用于文件名与报告，不进提示词）',
+  lang: 'zh',
   source: '出处，可省',
-  identity: { age: 19, gender: 'female', en: 'A slender nineteen-year-old Chinese young woman, 1930s Republican-era China', zh: '19 岁女学生，民国', source: 'stated' },
-  face: { en: 'Oval face with soft rounded cheeks, large dark wary eyes, straight fine eyebrows, thin lips', zh: '鹅蛋脸……', source: 'stated' },
-  hair: { en: 'Centre-parted black hair in two long braids', zh: '中分黑发，两条长辫', source: 'stated' },
+  identity: { age: 19, gender: 'female', en: 'A slender nineteen-year-old Chinese young woman, 1930s Republican-era China', text: '19 岁女学生，民国', source: 'stated' },
+  face: { en: 'Oval face with soft rounded cheeks, large dark wary eyes, straight fine eyebrows, thin lips', text: '鹅蛋脸……', source: 'stated' },
+  hair: { en: 'Centre-parted black hair in two long braids', text: '中分黑发，两条长辫', source: 'stated' },
   outfit: {
     id: 'default', label: '常态',
-    top: { en: 'a dark navy cotton student tunic with a plain white collar, slightly faded at the cuffs', zh: '藏青棉布学生装，白领', source: 'inferred' },
-    bottom: { en: 'a dark mid-calf pleated skirt, white socks and black cloth shoes', zh: '深色及膝百褶裙、白袜、黑布鞋', source: 'inferred' },
+    top: { en: 'a dark navy cotton student tunic with a plain white collar, slightly faded at the cuffs', text: '藏青棉布学生装，白领', source: 'inferred' },
+    bottom: { en: 'a dark mid-calf pleated skirt, white socks and black cloth shoes', text: '深色及膝百褶裙、白袜、黑布鞋', source: 'inferred' },
     details: [
-      { slot: 'hair', en: 'the tip of one of her long black braids, tied with faded red string', zh: '辫梢系褪色红绳', source: 'stated' },
-      { slot: 'neck', en: 'the plain white collar and the cloth-knot button of her dark navy cotton tunic', zh: '白领口与盘扣', source: 'inferred' },
-      { slot: 'sleeve', en: 'the dark navy cotton cuff, faded and slightly frayed at the edge', zh: '洗旧的袖口', source: 'inferred' },
-      { slot: 'feet', en: 'black cloth shoes with a single strap and white cotton socks', zh: '一字带黑布鞋、白棉袜', source: 'inferred' },
+      { slot: 'hair', en: 'the tip of one of her long black braids, tied with faded red string', text: '辫梢系褪色红绳', source: 'stated' },
+      { slot: 'neck', en: 'the plain white collar and the cloth-knot button of her dark navy cotton tunic', text: '白领口与盘扣', source: 'inferred' },
+      { slot: 'sleeve', en: 'the dark navy cotton cuff, faded and slightly frayed at the edge', text: '洗旧的袖口', source: 'inferred' },
+      { slot: 'feet', en: 'black cloth shoes with a single strap and white cotton socks', text: '一字带黑布鞋、白棉袜', source: 'inferred' },
     ],
   },
 };
@@ -129,62 +132,81 @@ export function checkReport(asset, oid) {
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const rel = (from, abs) => relative(from, abs).split(sep).join('/');
 
-function outfitSection(asset, oid, assetDir, outDir) {
+function outfitSection(asset, oid, assetDir, outDir, ui) {
   const outfit = asset.outfits[oid];
   const V = allViews(outfit);
+  const label = (view) => (VIEWS[view] ? ui.views[view] : V[view]?.detail?.slot === 'custom' ? V[view].label : ui.slots[V[view]?.detail?.slot] ?? view);
   const src = (view) => {
     const cur = current(outfit, view);
     return cur ? rel(outDir, join(assetDir, cur.file)) : null;
   };
   const img = (view, cls = 'img') => {
     const s = src(view);
-    const stale = s && staleReasons(asset, oid, view).length;
-    return s ? `<img class="${cls}${stale ? ' stale' : ''}" src="${esc(s)}" alt="${esc(V[view]?.label ?? view)}" loading="lazy">`
-      : `<div class="${cls} miss">未生成 · 第 ${V[view]?.tier ?? '?'} 档</div>`;
+    const stale = s && staleCodes(asset, oid, view).length;
+    return s ? `<img class="${cls}${stale ? ' stale' : ''}" src="${esc(s)}" alt="${esc(label(view))}" loading="lazy">`
+      : `<div class="${cls} miss">${esc(fmt(ui.notGenerated, { n: V[view]?.tier ?? '?' }))}</div>`;
   };
   const anchor = current(outfit, ANCHOR);
-  const conf = !anchor ? '还没有锚点' : anchor.confirmed === true ? '锚点已确认' : anchor.confirmed === 'auto' ? '锚点未经人工确认（配置为自动）' : '锚点待确认';
+  const conf = !anchor ? ui.noAnchor : anchor.confirmed === true ? ui.anchorConfirmed : anchor.confirmed === 'auto' ? ui.anchorAuto : ui.anchorPending;
   const has = (t) => viewsOfTier(outfit, t).some((v) => current(outfit, v));
   const tierNow = [4, 3, 2, 1].find(has) ?? 0;
   const L = resolveLayers(asset, oid);
-  const tag = (f) => (f?.source && f.source !== 'stated' ? `<span class="src">${SOURCES[f.source]}</span>` : '');
-  const rows = [['身份', L.identity], ['脸型五官', L.face], ['发型', L.hair], ...(L.build ? [['身形', L.build]] : []), ['上装', L.top], ['下装', L.bottom],
-    ['皮肤', L.skin], ['背面', L.backCue], ...L.details.map((d) => [`细节 · ${d.slot === 'custom' ? d.id : DETAIL_SLOTS[d.slot].label}`, d])];
-  const desc = `<details class="desc"><summary>角色描述（确认表）</summary><dl>${rows.map(([k, f]) => `<dt>${esc(k)}</dt><dd>${esc(f?.zh ?? f?.en ?? '')}${tag(f)}</dd>`).join('')}</dl></details>`;
+  const F = ui.fields;
+  const tag = (f) => (f?.source && f.source !== 'stated' ? `<span class="src">${esc(ui.sources[f.source])}</span>` : '');
+  const text = (f) => (f?.auto === 'skin' ? ui.defaultSkin[skinBand(L.identity.age)] : f?.auto === 'back' ? ui.defaultBack : human(f));
+  const idLine = fmt(ui.identityLine, { text: human(L.identity), age: L.identity.age, gender: ui[L.identity.gender] ?? L.identity.gender });
+  const rows = [[F.identity, L.identity, idLine], [F.face, L.face], [F.hair, L.hair], ...(L.build ? [[F.build, L.build]] : []), [F.top, L.top], [F.bottom, L.bottom],
+    [F.skin, L.skin], [F.backCue, L.backCue], ...L.details.map((d) => [fmt(F.detail, { x: d.slot === 'custom' ? d.id : ui.slots[d.slot] }), d])];
+  const desc = `<details class="desc"><summary>${esc(ui.descSummary)}</summary><dl>${rows.map(([k, f, t]) => `<dt>${esc(k)}</dt><dd>${esc(t ?? text(f))}${tag(f)}</dd>`).join('')}</dl></details>`;
+  const gateLabel = (g, spec) => (g.id === 'white' ? (spec.kind === 'face' ? ui.gates.whiteFace : spec.kind === 'full' ? ui.gates.whiteFull : ui.gates.white)
+    : fmt(ui.gates[g.id] ?? g.label, { x: spec.ratio }));
   const table = Object.entries(V).map(([view, spec]) => {
     const cur = current(outfit, view);
-    const stale = cur ? staleReasons(asset, oid, view) : [];
+    const stale = cur ? staleCodes(asset, oid, view) : [];
     const bad = (cur?.gates ?? []).filter((g) => !g.ok);
-    const state = !cur ? '<span class="dim">未生成</span>' : stale.length ? `<span class="bad">已过期</span> ${esc(stale.join('；'))}`
-      : bad.length ? `<span class="bad">门未过</span> ${esc(bad.map((g) => g.label).join('；'))}` : '<span class="ok">✓</span>';
-    return `<tr><td>${esc(spec.label)}</td><td>${spec.tier}</td><td>${cur ? `v${cur.v}` : ''}</td><td>${esc(cur?.model ?? '')}</td><td>${esc(cur?.seed ?? '')}</td><td class="mono">${esc(cur?.id ?? '')}</td><td>${state}</td></tr>`;
+    const state = !cur ? `<span class="dim">${esc(ui.stNone)}</span>` : stale.length ? `<span class="bad">${esc(ui.stStale)}</span> ${esc(stale.map((c) => staleText(c, ui)).join('; '))}`
+      : bad.length ? `<span class="bad">${esc(ui.stGate)}</span> ${esc(bad.map((g) => gateLabel(g, spec)).join('; '))}` : '<span class="ok">✓</span>';
+    return `<tr><td>${esc(label(view))}</td><td>${spec.tier}</td><td>${cur ? `v${cur.v}` : ''}</td><td>${esc(cur?.model ?? '')}</td><td>${esc(cur?.seed ?? '')}</td><td class="mono">${esc(cur?.id ?? '')}</td><td>${state}</td></tr>`;
   }).join('');
   const models = new Set(Object.keys(V).map((v) => current(outfit, v)?.model).filter(Boolean));
   const notes = [
     anchor && anchor.confirmed !== true ? `<p class="warn">${esc(conf)}</p>` : '',
-    models.size > 1 ? `<p class="note">这组图混用了 ${esc([...models].join(' / '))}：一致性来自同一张锚点，可以混用，请多看一眼质感是否衔接。</p>` : '',
+    models.size > 1 ? `<p class="note">${esc(fmt(ui.mixed, { x: [...models].join(' / ') }))}</p>` : '',
   ].join('');
   const details = viewsOfTier(outfit, 3);
   const sheet = tierNow <= 1
-    ? `<div class="card1">${img(ANCHOR)}<div class="card1-info"><b>第一档 · 只有锚点</b><p>${esc(conf)}</p>${desc}</div></div>`
+    ? `<div class="card1">${img(ANCHOR)}<div class="card1-info"><b>${esc(ui.tier1Only)}</b><p>${esc(conf)}</p>${desc}</div></div>`
     : `<div class="sheet"><div class="bust">${img('face-front')}</div><div class="right">
-  <div class="turn">${['front-full', 'side-full', 'back-full'].map((v) => `<div class="full">${img(v)}<em>${esc(V[v].label)}</em></div>`).join('')}</div>
-  <div class="details" style="--n:${Math.max(1, details.length)}">${details.map((v) => `<div class="cell">${img(v)}<em>${esc(V[v].label)}</em></div>`).join('')}</div>
+  <div class="turn">${['front-full', 'side-full', 'back-full'].map((v) => `<div class="full">${img(v)}<em>${esc(label(v))}</em></div>`).join('')}</div>
+  <div class="details" style="--n:${Math.max(1, details.length)}">${details.map((v) => `<div class="cell">${img(v)}<em>${esc(label(v))}</em></div>`).join('')}</div>
 </div></div>${desc}`;
-  const extra = current(outfit, 'face-45') ? `<div class="extra">${img('face-45')}<span>45° 大头照（第四档，不进版面）</span></div>` : '';
-  return `<section class="set"><h2>${esc(asset.name)} · ${esc(outfit.label)}<span>第 ${tierNow} 档 · ${esc(conf)} · 画风：${esc(outfit.look?.label ?? '')}</span></h2>
+  const extra = current(outfit, 'face-45') ? `<div class="extra">${img('face-45')}<span>${esc(ui.face45Extra)}</span></div>` : '';
+  const look = ui.looks[outfit.look?.id] ?? outfit.look?.label ?? '';
+  const T = ui.th;
+  return `<section class="set"><h2>${esc(asset.name)} · ${esc(outfit.label)}<span>${esc(fmt(ui.tierN, { n: tierNow }))} · ${esc(conf)} · ${esc(fmt(ui.look, { x: look }))}</span></h2>
 ${notes}${sheet}${extra}
-<details class="views"><summary>全部视图</summary><table><thead><tr><th>视图</th><th>档</th><th>版本</th><th>模型</th><th>种子</th><th>标识</th><th>状态</th></tr></thead><tbody>${table}</tbody></table></details></section>`;
+<details class="views"><summary>${esc(ui.allViews)}</summary><table><thead><tr><th>${esc(T.view)}</th><th>${esc(T.tier)}</th><th>${esc(T.version)}</th><th>${esc(T.model)}</th><th>${esc(T.seed)}</th><th>${esc(T.id)}</th><th>${esc(T.state)}</th></tr></thead><tbody>${table}</tbody></table></details></section>`;
 }
 
-export function renderHtml(items, outDir) {
-  const body = items.map(({ asset, assetDir }) => Object.keys(asset.outfits).map((oid) => outfitSection(asset, oid, assetDir, outDir)).join('\n')).join('\n');
-  return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>角色参考图</title><style>
+/**
+ * 报告语言：--lang 优先，否则取第一个角色的 lang，都没有就中文。
+ * 非内置语言要有完整的 ui：--ui 传入的文件，或资产里自带的。
+ */
+export function reportUi(items, { lang = null, ui = null } = {}) {
+  const l = lang ?? items[0]?.asset.lang ?? 'zh';
+  const custom = ui ?? items.find((it) => (it.asset.lang ?? 'zh') === l && it.asset.ui)?.asset.ui ?? null;
+  return uiFor(l, custom);
+}
+
+export function renderHtml(items, outDir, opts = {}) {
+  const ui = reportUi(items, opts);
+  const body = items.map(({ asset, assetDir }) => Object.keys(asset.outfits).map((oid) => outfitSection(asset, oid, assetDir, outDir, ui)).join('\n')).join('\n');
+  return `<!doctype html><html lang="${esc(ui.htmlLang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(ui.title)}</title><style>
 :root{--bg:#f2f2ef;--ink:#1c1f22;--ink2:#5f666c;--rule:#d4d6d1;--card:#fff;--ok:#2f6b47;--bad:#a3342a;--warn:#9a6a12}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#16181a;--ink:#e7e8e6;--ink2:#9ba2a8;--rule:#34383c;--card:#1f2225;--ok:#6fbf8f;--bad:#e7867c;--warn:#e0b25a}}
 :root[data-theme=dark]{--bg:#16181a;--ink:#e7e8e6;--ink2:#9ba2a8;--rule:#34383c;--card:#1f2225;--ok:#6fbf8f;--bad:#e7867c;--warn:#e0b25a}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 system-ui,-apple-system,"PingFang SC","Hiragino Sans","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif}
 main{max-width:1400px;margin:0 auto;padding:24px 16px 56px}
 h1{font-size:20px;margin:0 0 4px}.lead{color:var(--ink2);margin:0 0 16px}
 .seg{display:inline-flex;border:1px solid var(--rule);border-radius:4px;overflow:hidden;margin:0 0 24px}
@@ -201,7 +223,7 @@ body:not(.with) .sheet{aspect-ratio:16/5.94}body:not(.with) .right{grid-template
 .full .img{max-width:100%;max-height:100%;object-fit:contain;display:block}
 .details{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:1.2%;padding:1.2%;min-height:0}
 .cell .img{width:100%;height:100%;object-fit:cover;display:block;border-radius:2px}
-.full em,.cell em{position:absolute;top:3px;left:6px;font:500 11px/1 "PingFang SC",sans-serif;font-style:normal;color:#6f767b;background:#fffd;padding:2px 4px;border-radius:2px}
+.full em,.cell em{position:absolute;top:3px;left:6px;font:500 11px/1 system-ui,"PingFang SC",sans-serif;font-style:normal;color:#6f767b;background:#fffd;padding:2px 4px;border-radius:2px}
 .miss{display:flex;align-items:center;justify-content:center;color:#8f969a;font-size:12px;width:100%;height:100%;min-height:80px;background:#f6f6f4;border:1px dashed #d9dbd6;border-radius:2px}
 .stale{outline:3px solid var(--bad);outline-offset:-3px}
 .card1{display:grid;grid-template-columns:minmax(0,320px) 1fr;gap:20px;background:var(--card);border:1px solid var(--rule);border-radius:4px;padding:14px}
@@ -216,9 +238,9 @@ table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}th,td{te
 .extra{display:flex;gap:10px;align-items:flex-end;margin-top:10px;font-size:12px;color:var(--ink2)}.extra .img{height:160px;border:1px solid var(--rule);border-radius:2px;background:#fff}
 img.img{cursor:zoom-in}.lb{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center}.lb.on{display:flex}.lb img{max-width:94vw;max-height:94vh}
 </style></head><body><main>
-<h1>角色参考图</h1>
-<p class="lead">一张确认过的正面全身照（锚点）为根，其余每张都只参考它。红框表示已过期（锚点、参考图或文字描述变了）。</p>
-<div class="seg" role="group" aria-label="版面"><button data-l="without" class="on">无细节图</button><button data-l="with">有细节图</button></div>
+<h1>${esc(ui.title)}</h1>
+<p class="lead">${esc(ui.lead)}</p>
+<div class="seg" role="group" aria-label="${esc(ui.layout)}"><button data-l="without" class="on">${esc(ui.without)}</button><button data-l="with">${esc(ui.with)}</button></div>
 ${body}
 </main><div class="lb" id="lb"><img alt=""></div>
 <script>
@@ -252,7 +274,9 @@ const USAGE = `character-refs.mjs —— 角色参考图
       [--outfit id] [--model m] [--seed n] [--reason 文字] [--no-confirm]
   confirm <asset.json> [--outfit id]       确认锚点
   check <asset.json> [--outfit id]         检查门与过期；有问题 exit 1
-  render <asset.json>... [--out report.html]  出报告（默认不显示细节图，页面上可切换）
+  render <asset.json>... [--out report.html] [--lang 代码] [--ui ui.json]
+                                           出报告（默认不显示细节图，页面上可切换）；语言默认取资产的 lang
+  ui-template <语言代码>                   非内置语言（zh / en / ja 之外）的界面文案骨架，翻译后放进 intake 的 ui
 
 视图：front-full（锚点，第一档） face-front side-full back-full（第二档）
       detail-hair detail-neck detail-sleeve detail-feet（第三档） face-45（第四档）`;
@@ -297,6 +321,12 @@ async function main(argv) {
   }
 
   if (cmd === 'intake-template') { console.log(JSON.stringify(INTAKE_TEMPLATE, null, 2)); return; }
+  if (cmd === 'ui-template') {
+    const [lang] = posArgs(rest);
+    if (!lang) throw new Error(`用法：ui-template <语言代码>（内置 ${BUILTIN.join(' / ')} 不用翻）`);
+    console.log(JSON.stringify(uiTemplate(lang), null, 2));
+    return;
+  }
   if (cmd === 'look-template') { console.log(JSON.stringify(DEFAULT_LOOK, null, 2)); return; }
 
   if (cmd === 'intake-check') {
@@ -395,7 +425,9 @@ async function main(argv) {
     if (!paths.length) throw new Error('用法：render <asset.json>... [--out report.html]');
     const out = flag(rest, '--out');
     const outDir = out ? dirname(resolve(out)) : process.cwd();
-    const html = renderHtml(paths.map((p) => ({ asset: readJson(p), assetDir: dirname(resolve(p)) })), outDir);
+    const uiPath = flag(rest, '--ui');
+    const html = renderHtml(paths.map((p) => ({ asset: readJson(p), assetDir: dirname(resolve(p)) })), outDir,
+      { lang: flag(rest, '--lang'), ui: uiPath ? readJson(uiPath) : null });
     if (out) { writeFileSync(resolve(out), html, 'utf8'); console.log(`✓ ${resolve(out)}`); } else process.stdout.write(html);
     return;
   }

@@ -102,9 +102,11 @@ node {baseDir}/scripts/character-refs.mjs intake-template
 
 照模板把描述拆进各字段，写到 `<工作目录>/<角色名>-intake.json`。规则（详见 `references/intake.md`）：
 
+- `lang` 填用户说话的语言（中文 `zh`、英文 `en`、日文 `ja` 内置）。确认表和报告都用这个语言；
+  其他语言先运行 `ui-template <lang>`，把打印出的英文文案逐项翻译，整块放进 intake 的 `ui` 字段
 - 用户说了的标 `stated`，你推出来的标 `inferred`，按惯例补的标 `default`——**如实标**，确认表靠它提醒用户看哪几项
 - **年龄、性别、年代推不出来就问用户**，只有这三样不许自己编；其余一律自己补，不要追问
-- `en` 进提示词：英文、不写角色名、不写画风词；`zh` 给人看
+- `en` 进提示词：**永远英文**、不写角色名、不写画风词；`text` 给人看，用 `lang` 的语言写（旧输入写的 `zh` 照样认）
 - 服装分 `top` / `bottom`——大头照只用上装，带上下装模型就会把镜头拉远
 
 ```bash
@@ -167,7 +169,9 @@ node {baseDir}/scripts/character-refs.mjs gen <asset.json> detail-neck --model c
 node {baseDir}/scripts/character-refs.mjs render <asset.json>... --out <输出目录>/character-refs.html
 ```
 
-多个角色可以一起出。第一档只有一张卡片；第二档起是设定图版面（左大头照，右上正面 / 侧面 / 背面，右下细节条），
+多个角色可以一起出。语言默认取资产的 `lang`，临时换加 `--lang en`；非内置语言没带 `ui` 时，用 `--ui <文件>` 传自译文案，
+缺文案会直接报错，不出半中半英的报告。界面文案换语言，角色描述保持原文。
+第一档只有一张卡片；第二档起是设定图版面（左大头照，右上正面 / 侧面 / 背面，右下细节条），
 **默认不显示细节图**，页面上一键切换。过期的图标红框，混用模型会提醒。
 
 ### Step 7 — 汇报
@@ -207,7 +211,7 @@ node {baseDir}/scripts/character-refs.mjs render <asset.json>... --out <输出�
 node {baseDir}/scripts/selftest.mjs
 ```
 
-140 项断言，不调模型、不花额度：PNG 标识读写、检查门、输入校验、提示词、过期传导、出图适配器的请求格式（Qwen 与 GPT Image 使用本地假服务器）、
+171 项断言，不调模型、不花额度：PNG 标识读写、检查门、输入校验、多语言确认表与报告、提示词、过期传导、出图适配器的请求格式（Qwen 与 GPT Image 使用本地假服务器）、
 以及使用自定义命令跑通的完整流程。改完脚本先跑这个。
 
 ## 自带样例
