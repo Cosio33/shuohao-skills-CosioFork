@@ -8,7 +8,7 @@ export const UI = {
     htmlLang: 'zh-CN',
     title: '角色参考图',
     lead: '一张确认过的正面全身照（锚点）为根，其余每张都只参考它。红框表示已过期（锚点、参考图或文字描述变了）。',
-    layout: '版面', without: '无细节图', with: '有细节图',
+    layout: '版面', without: '无细节图', with: '有细节图', shot: '截图模式（16:9）', shotExit: '退出截图模式（Esc）',
     views: {
       'front-full': '正面全身（锚点）', 'face-front': '正脸大头照', 'side-full': '侧面 90°（面朝右）',
       'back-full': '背面', 'face-45': '45° 大头照（面朝左）',
@@ -48,7 +48,7 @@ export const UI = {
     htmlLang: 'en',
     title: 'Character references',
     lead: 'One confirmed front full-body image (the anchor) is the root; every other image references only it. A red outline means stale (the anchor, a reference image or the text description changed).',
-    layout: 'Layout', without: 'Without details', with: 'With details',
+    layout: 'Layout', without: 'Without details', with: 'With details', shot: 'Screenshot mode (16:9)', shotExit: 'Exit screenshot mode (Esc)',
     views: {
       'front-full': 'Front full body (anchor)', 'face-front': 'Front headshot', 'side-full': '90° profile (facing right)',
       'back-full': 'Back', 'face-45': '45° headshot (facing left)',
@@ -88,7 +88,7 @@ export const UI = {
     htmlLang: 'ja',
     title: 'キャラクター参照画像',
     lead: '確認済みの正面全身画像（アンカー）を起点に、他の画像はすべてそれだけを参照します。赤枠は期限切れ（アンカー・参照画像・テキスト記述のいずれかが変更された）を示します。',
-    layout: 'レイアウト', without: 'ディテールなし', with: 'ディテールあり',
+    layout: 'レイアウト', without: 'ディテールなし', with: 'ディテールあり', shot: 'スクリーンショット（16:9）', shotExit: 'スクリーンショットを終了（Esc）',
     views: {
       'front-full': '正面全身（アンカー）', 'face-front': '正面バストアップ', 'side-full': '真横 90°（右向き）',
       'back-full': '背面', 'face-45': '45° バストアップ（左向き）',

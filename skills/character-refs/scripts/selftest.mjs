@@ -379,6 +379,9 @@ const serve = (handler) => new Promise((ok_) => {
     for (const v of [ANCHOR, 'face-front', 'face-45']) recordVersion(a, 'default', v, { buf: png, model: 'qwen', prompt: buildPrompt(a, 'default', v), refs: [] });
     const h = renderHtml([{ asset: a, assetDir: TMP }], TMP);
     ok(/<details class="views">(?:(?!<\/details>)[\s\S])*<div class="extra">/.test(h), '45° 大头照收在「全部视图」里，展开才显示');
+    ok(h.includes('class="shotbtn"') && h.includes('截图模式（16:9）') && h.includes('<div class="cap"><b>阿禾</b>'), '截图模式：有切换按钮、有角色名牌');
+    ok(h.includes('id="to-white"') && h.includes('min(100vw,177.78vh)'), '截图模式：浅灰底推成纯白，版面取能放下的最大 16:9');
+    ok(/location\.hash[\s\S]*details=\(\[01\]\)/.test(h), '链接 #shot&details=1 直接进截图模式（无头浏览器导出用）');
   }
   ok(html.includes('<html lang="zh-CN">') && !html.includes('Without details'), '中文资产默认出中文报告');
   const outEn = join(TMP, 'report-en.html');
@@ -394,6 +397,21 @@ const serve = (handler) => new Promise((ok_) => {
   ok(run('render', assetPath, '--lang', 'fr', '--out', outEn).status !== 0, '非内置语言没给 ui：render 报错，不出半中半英的报告');
   ok(run('render', assetPath, '--lang', 'fr', '--ui', uiFile, '--out', outEn).status === 0 && readFileSync(outEn, 'utf8').includes('Références de personnage'), 'render --ui 传自译文案');
   ok(JSON.parse(run('ui-template', 'fr').stdout).htmlLang === 'fr', 'ui-template 打印骨架');
+  {
+    const d = join(TMP, 'def');
+    run('new', join(here, '..', 'examples', '阿禾-intake.json'), '--out', d);
+    const ap = join(d, safeName('阿禾'), 'asset.json');
+    const g1 = run('gen', ap);
+    ok(g1.status === 0 && g1.stdout.includes('front-full/v1') && !g1.stdout.includes('face-front') && g1.stdout.includes('确认后再运行'), '默认 gen：锚点要确认时，只出锚点并提示接着怎么做');
+    run('confirm', ap);
+    const g2 = run('gen', ap);
+    ok(['face-front', 'side-full', 'back-full'].every((v) => g2.stdout.includes(`${v}/v1`)) && !g2.stdout.includes('detail-'), '确认后再 gen：补齐第二档，不碰细节图');
+    ok(run('gen', ap).stdout.includes('已经齐了'), '第二档齐了再 gen：不重出，提示细节图怎么出');
+    const d2 = join(TMP, 'def2');
+    run('new', join(here, '..', 'examples', '阿禾-intake.json'), '--out', d2);
+    const g3 = run('gen', join(d2, safeName('阿禾'), 'asset.json'), '--no-confirm');
+    ok(['front-full', 'face-front', 'side-full', 'back-full'].every((v) => g3.stdout.includes(`${v}/v1`)), '--no-confirm：一条命令出齐第二档');
+  }
   const lk = run('looks').stdout;
   ok(lk.includes('动漫') && lk.includes('Anime') && lk.includes('* 写实照片'), 'looks 列出预设，标出默认');
   const lookFile = join(TMP, 'my-look.json');

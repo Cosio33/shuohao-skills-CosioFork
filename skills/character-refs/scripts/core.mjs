@@ -30,6 +30,8 @@ export const VIEWS = {
   'face-45': { tier: 4, ratio: '4:5', kind: 'face', label: '45° 大头照（面朝左）', refs: ['front-full'] },
 };
 export const ANCHOR = 'front-full';
+/** 默认出到第二档：锚点 + 正脸大头照 + 90° 侧面 + 背面（视频测试里大头照对保脸最有用，用户定默认就出齐）。 */
+export const DEFAULT_TIER = 2;
 export const RATIOS = { '2:3': 2 / 3, '4:5': 4 / 5, '1:1': 1 };
 
 /** 细节槽位：默认四个，都是两个测试角色上实测通过的部位。 */

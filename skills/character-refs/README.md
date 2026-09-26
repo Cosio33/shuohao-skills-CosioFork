@@ -9,16 +9,16 @@
 **一组图只有一个根**：正面全身锚点。只有它是文生图，大头照、侧面、背面、细节图都只参考这张锚点，
 图与图之间不再互相参考——任何一张出坏了，单独重出这一张，不牵连别的。
 
-## 分档，按需升档
+## 分档，默认出到第二档
 
 | 档位 | 内容 | 什么时候出 |
 | --- | --- | --- |
-| 1（默认） | 正面全身（锚点） | 总是 |
-| 2 | 正脸大头照、90° 侧面、背面 | 有特写 / 近景、侧身、背影 |
+| 1 | 正面全身（锚点） | 总是，第一张 |
+| 2（默认） | 正脸大头照、90° 侧面、背面 | 默认就出齐 |
 | 3 | 4 张细节：头发 / 发饰、领口、袖口、鞋 | 有配饰或服装局部的特写 |
 | 4（默认不出） | 45° 大头照 | 明确要 |
 
-依据是一次 H3 实测：只挂正面全身，服装和背影都对，但脸会走样；加一张大头照，脸最接近。所以大多数角色一档够用，升档时大头照最优先。
+依据是一次 H3 实测：只挂正面全身，服装和背影都对，但脸会走样；加一张大头照，脸最接近。所以默认出齐第二档，细节图和 45° 按需再加。
 
 ## 一次性输入
 
@@ -89,7 +89,7 @@ node scripts/character-refs.mjs gen 阿禾/asset.json detail-neck --model codex 
 ## 报告
 
 `render` 出一张双击就能开的 HTML：一档只有一张卡片；二档起是设定图版面（左大头照，右上正面 / 侧面 / 背面，右下细节条），
-默认不显示细节图，页面上一键切换。界面内置中文、英文、日文（`render --lang en`），其他语言由 agent 现场翻一份文案；
+默认不显示细节图，页面上一键切换。「截图模式」只留一张 16:9 设定图，直接截图就能用。界面内置中文、英文、日文（`render --lang en`），其他语言由 agent 现场翻一份文案；
 角色描述保持原文，提示词永远英文。版面由代码排，不生成拼接大图——拼接图当参考图，模型会把人画小。
 
 ## 命令行直接使用
@@ -98,9 +98,10 @@ node scripts/character-refs.mjs gen 阿禾/asset.json detail-neck --model codex 
 node scripts/character-refs.mjs config --model qwen --confirm-anchor yes --qwen-env-file ~/comfy.env
 node scripts/character-refs.mjs intake-check examples/阿禾-intake.json
 node scripts/character-refs.mjs new examples/阿禾-intake.json --out out/
-node scripts/character-refs.mjs gen out/阿禾/asset.json --tier 1
+node scripts/character-refs.mjs gen out/阿禾/asset.json          # 出锚点，停下等确认
 node scripts/character-refs.mjs confirm out/阿禾/asset.json
-node scripts/character-refs.mjs gen out/阿禾/asset.json --tier 2 --reason "E03 有面部特写"
+node scripts/character-refs.mjs gen out/阿禾/asset.json          # 补齐第二档：大头照、侧面、背面
+node scripts/character-refs.mjs gen out/阿禾/asset.json --tier 3 --reason "E03 有发饰特写"
 node scripts/character-refs.mjs check out/阿禾/asset.json
 node scripts/character-refs.mjs render out/阿禾/asset.json --out out/character-refs.html
 ```
@@ -133,7 +134,7 @@ examples/
 node scripts/selftest.mjs
 ```
 
-199 项断言，不调模型、不花额度，Qwen 和 GPT Image 使用本地假服务器校验请求格式，完整流程使用自定义命令造的白底图跑通。
+209 项断言，不调模型、不花额度，Qwen 和 GPT Image 使用本地假服务器校验请求格式，完整流程使用自定义命令造的白底图跑通。
 
 ## 已知短板
 
