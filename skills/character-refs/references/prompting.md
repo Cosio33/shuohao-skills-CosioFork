@@ -25,6 +25,9 @@
 
 - 大头照：第一句必须是 `Zoom in to an extreme close-up head-and-shoulders portrait, passport-photo framing`，
   再写可量化的取景：头顶贴近上边、下巴在画面高度正中、下边切在锁骨。只写 close-up 会出成半身
+- **正面也要写成几何**：锚点写「肩、髋、脚都正对镜头，鼻子在脸的中线上，两只耳朵一样可见」，反向词禁 three-quarter view / turned body / contrapposto。
+  只写 facing the camera 时，动漫画风会按「官方角色图」的习惯把锚点画成微侧身，大头照照着锚点改，也跟着侧过去 20–30°，几乎和 45° 那张一样（实测）。
+  正脸大头照同样写几何、禁侧脸；**取景写在几何前面，结尾再重申一次取景**——几何写长了会冲淡开头的「拉近」，镜头退回半身（实测）
 - 背面：`Rotate the camera 180 degrees around her`，再写**只有背面看得到的东西**（辫子垂在背后、衣服背面、脚跟），
   反向词禁 face / buttons / pockets。不写这些 Qwen 会出成正面
 - 侧面：写全身和头都朝画面右侧、只看得到右半边脸、不看镜头。不写「不看镜头」会回头看

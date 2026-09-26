@@ -171,11 +171,13 @@ eq(A.outfits[O].look.style, DEFAULT_LOOK.style, '建资产时把画风层整份�
   eq(viewsOfTier(x.outfits[O], 3).length, 0, '没写细节就没有第三档');
 }
 const P = (v) => buildPrompt(A, O, v);
-ok(P('front-full').text.startsWith('Full-body front view: she stands naturally facing the camera'), '锚点：正面全身，代词按性别');
+ok(P('front-full').text.startsWith('Full-body front view: she stands straight and faces the camera squarely'), '锚点：正面全身，代词按性别');
 ok(P('front-full').text.includes(DEFAULT_LOOK.style) && P('front-full').text.includes(DEFAULT_LOOK.clean), '锚点带画风层');
 eq(P('front-full').refs.length, 0, '锚点纯文生图，不挂参考');
 ok(P('face-front').text.startsWith('Zoom in to an extreme close-up head-and-shoulders portrait, passport-photo framing'), '大头照第一句要求拉近——改图模型只听第一句');
 ok(P('face-front').text.includes('chin sits at the vertical middle'), '大头照写可量化的取景');
+ok(P('front-full').text.includes('both ears equally visible') && P('front-full').negative.includes('three-quarter view'), '锚点把「正面」写成几何，并禁 3/4 侧身——锚点侧了，派生的大头照也会侧');
+ok(P('face-front').text.includes('nose is on the vertical centre line') && P('face-front').text.endsWith('sleeves and cuffs are out of frame.') && P('face-front').negative.includes('head turned to the side'), '正脸大头照同样写几何、禁侧脸');
 ok(!P('face-front').text.includes('trousers') && !P('face-front').text.includes('sandals') && !P('face-45').text.includes('sandals'), '大头照不写下装和鞋——写了就拉远镜头');
 ok(P('face-front').text.includes('the same hand-woven indigo cotton jacket') && P('face-front').text.includes('eyebrows, one thick black braid'), '大头照保留上装；冠词和句首大写处理干净');
 ok(P('side-full').text.includes('the same loose black cotton trousers'), '全身视图保留下装');

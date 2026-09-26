@@ -164,19 +164,27 @@ export function buildPrompt(asset, outfitId, viewId, look = DEFAULT_LOOK) {
   const keep = keepList(['same face, eyes and eyebrows', lowerFirst(en(L.hair)), same(L.top), same(L.bottom)]);
   const tight = `Framing: the top of ${p} head is just below the top edge of the image, ${p} chin sits at the vertical middle of the image, ` +
     `and the bottom edge of the image cuts across ${p} collarbones.`;
+  const reframe = `Framing reminder: the bottom edge of the image cuts across ${p} collarbones, so ${p} arms, sleeves and cuffs are out of frame.`;
   const neg = BASE_NEG + ', ' + look.neg;
   const faceNeg = FACE_NEG + ', ' + look.neg;
 
   let text, negative;
   switch (viewId) {
     case 'front-full':
-      text = `Full-body front view: ${s} stands naturally facing the camera, arms relaxed at ${p} sides, the whole figure from head to feet ` +
-        `visible and centered, with margin above the head and below the feet. ${look_} ${look.style} ${look.clean}`;
-      negative = neg + ', cropped feet, cropped head';
+      // 正面要写成几何：只写 facing the camera，动漫画风会按「官方角色图」的习惯画成微侧身，
+      // 派生图照着锚点改，大头照也跟着侧过去（实测）。
+      text = `Full-body front view: ${s} stands straight and faces the camera squarely, shoulders, hips and feet square to the camera, ` +
+        `${p} face pointing straight at the camera with ${p} nose on the vertical centre line of ${p} face and both ears equally visible, ` +
+        `arms relaxed at ${p} sides, the whole figure from head to feet visible and centered, with margin above the head and below the feet. ` +
+        `${look_} ${look.style} ${look.clean}`;
+      negative = neg + ', cropped feet, cropped head, three-quarter view, turned body, head turned to the side, contrapposto, dynamic pose';
       break;
     case 'face-front':
-      text = `Zoom in to an extreme close-up head-and-shoulders portrait, passport-photo framing, of ${who} facing the camera. ${tight} ${keepFace}`;
-      negative = faceNeg;
+      // 取景在前、几何在后、结尾再重申一次取景：正面的几何描述写长了会冲淡开头的「拉近」，镜头又退回半身（实测）
+      text = `Zoom in to an extreme close-up head-and-shoulders portrait, passport-photo framing, of ${who} facing the camera squarely. ` +
+        `${tight} ${S} faces straight at the camera: ${p} nose is on the vertical centre line of the image and both ears are equally visible. ` +
+        `${keepFace} ${reframe}`;
+      negative = faceNeg + ', three-quarter view, head turned to the side, profile, tilted head';
       break;
     case 'face-45':
       text = `Zoom in to an extreme close-up head-and-shoulders portrait, passport-photo framing, of ${who}, and turn ${p} head and ` +
