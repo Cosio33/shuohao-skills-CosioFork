@@ -197,8 +197,8 @@ function outfitSection(asset, oid, assetDir, outDir, ui) {
   const look = ui.looks[outfit.look?.id] ?? lookName(outfit.look, ui.htmlLang.split('-')[0]);
   const T = ui.th;
   return `<section class="set"><h2>${esc(asset.name)} · ${esc(outfit.label)}<span>${esc(fmt(ui.tierN, { n: tierNow }))} · ${esc(conf)} · ${esc(fmt(ui.look, { x: look }))}</span></h2>
-${notes}${sheet}${extra}
-<details class="views"><summary>${esc(ui.allViews)}</summary><table><thead><tr><th>${esc(T.view)}</th><th>${esc(T.tier)}</th><th>${esc(T.version)}</th><th>${esc(T.model)}</th><th>${esc(T.seed)}</th><th>${esc(T.id)}</th><th>${esc(T.state)}</th></tr></thead><tbody>${table}</tbody></table></details></section>`;
+${notes}${sheet}
+<div class="below"><details class="views"><summary>${esc(ui.allViews)}</summary><div class="tbl"><table><thead><tr><th>${esc(T.view)}</th><th>${esc(T.tier)}</th><th>${esc(T.version)}</th><th>${esc(T.model)}</th><th>${esc(T.seed)}</th><th>${esc(T.id)}</th><th>${esc(T.state)}</th></tr></thead><tbody>${table}</tbody></table></div></details>${extra}</div></section>`;
 }
 
 /**
@@ -248,7 +248,10 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:10px 0
 .src{margin-left:8px;font-size:11px;padding:0 5px;border:1px solid var(--warn);color:var(--warn);border-radius:2px}
 table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}th,td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
 .mono{font-family:ui-monospace,Menlo,monospace}.ok{color:var(--ok)}.bad{color:var(--bad)}.dim{color:var(--ink2)}
-.extra{display:flex;gap:10px;align-items:flex-end;margin-top:10px;font-size:12px;color:var(--ink2)}.extra .img{height:160px;border:1px solid var(--rule);border-radius:2px;background:#fff}
+.below{display:flex;gap:12px;align-items:flex-start;margin-top:10px}.below .views{flex:1;min-width:0;margin-top:0}.tbl{overflow-x:auto}
+.extra{flex:none;display:flex;flex-direction:column;gap:4px;align-items:center;max-width:230px;font-size:12px;color:var(--ink2);text-align:center}
+.extra .img{height:180px;max-width:100%;object-fit:contain;border:1px solid var(--rule);border-radius:2px;background:#fff}
+@media(max-width:700px){.below{flex-direction:column}.extra{align-self:center}}
 img.img{cursor:zoom-in}.lb{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center}.lb.on{display:flex}.lb img{max-width:94vw;max-height:94vh}
 </style></head><body><main>
 <h1>${esc(ui.title)}</h1>

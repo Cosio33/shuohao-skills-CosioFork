@@ -373,6 +373,13 @@ const serve = (handler) => new Promise((ok_) => {
   ok(html.includes('class="img stale"'), '过期的图在报告里标红框');
   ok(html.includes('角色描述（确认表）') && html.includes('推断'), '报告里带确认表与来源');
   ok(!/<link\s|<script\s+src=/.test(html), '报告零外部依赖');
+  {
+    const a = assetFromIntake(INTAKE);
+    const png = solidPng(10, 10);
+    for (const v of [ANCHOR, 'face-front', 'face-45']) recordVersion(a, 'default', v, { buf: png, model: 'qwen', prompt: buildPrompt(a, 'default', v), refs: [] });
+    const h = renderHtml([{ asset: a, assetDir: TMP }], TMP);
+    ok(/<div class="below"><details class="views">[\s\S]*<\/details><div class="extra">/.test(h), '45° 大头照放在「全部视图」右边');
+  }
   ok(html.includes('<html lang="zh-CN">') && !html.includes('Without details'), '中文资产默认出中文报告');
   const outEn = join(TMP, 'report-en.html');
   ok(run('render', assetPath, '--lang', 'en', '--out', outEn).status === 0, 'render --lang en');
