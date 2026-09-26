@@ -378,7 +378,7 @@ const serve = (handler) => new Promise((ok_) => {
     const png = solidPng(10, 10);
     for (const v of [ANCHOR, 'face-front', 'face-45']) recordVersion(a, 'default', v, { buf: png, model: 'qwen', prompt: buildPrompt(a, 'default', v), refs: [] });
     const h = renderHtml([{ asset: a, assetDir: TMP }], TMP);
-    ok(/<div class="below"><details class="views">[\s\S]*<\/details><div class="extra">/.test(h), '45° 大头照放在「全部视图」右边');
+    ok(/<details class="views">(?:(?!<\/details>)[\s\S])*<div class="extra">/.test(h), '45° 大头照收在「全部视图」里，展开才显示');
   }
   ok(html.includes('<html lang="zh-CN">') && !html.includes('Without details'), '中文资产默认出中文报告');
   const outEn = join(TMP, 'report-en.html');
