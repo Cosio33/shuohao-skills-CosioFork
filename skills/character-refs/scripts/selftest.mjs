@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { chunks, crc32, decode, pngInfo, readText, solidPng, withText } from './png.mjs';
 import {
   ANCHOR, DEFAULT_LOOK, allViews, anchorUsable, assetFromIntake, buildPrompt, confirmTable, current, defaultSkin, gates,
-  intakeProblems, layersHash, nounOf, pronouns, recordVersion, resolveRefs, staleReasons, viewsOfTier,
+  intakeProblems, nounOf, resolveLayers, pronouns, recordVersion, resolveRefs, staleReasons, viewsOfTier,
 } from './core.mjs';
 import {
   QWEN_SIZES, codexStdin, configMissing, fillTemplate, loadConfig, maskConfig, modelKind, openaiGenerate, openaiRequest,
@@ -84,13 +84,26 @@ bad((x) => { x.identity.source = 'default'; }, '不能用默认值', '身份用�
 bad((x) => { x.identity.age = '十六'; }, 'age', '年龄不是整数被拦');
 bad((x) => { x.identity.gender = 'girl'; }, 'gender', '性别只收 female / male');
 bad((x) => { x.outfit.details.push({ ...x.outfit.details[0] }); }, '重复', '同一细节槽位写两次被拦');
-bad((x) => { x.outfit.details.push({ slot: 'custom', id: 'scar', part: 'face', en: 'a thin old scar', zh: '疤' }); }, 'Zoom in', '自定义细节不以 Zoom in 开头被拦');
+bad((x) => { x.outfit.details.push({ slot: 'custom', id: 'pen', part: 'body', en: 'a close-up of the fountain pen', text: '钢笔' }); }, '取景词', '自定义细节写了 close-up 被拦——取景由脚本加');
+bad((x) => { x.outfit.details.push({ slot: 'custom', id: 'pen', part: 'chest', en: 'the fountain pen', text: '钢笔' }); }, 'part', '部位不在列表里被拦');
+bad((x) => { x.outfit.details.push({ slot: 'custom', id: 'glasses', part: 'face', en: 'his round glasses', text: '眼镜' }); }, '正脸大头照', '脸部细节被拦，并说明大头照已经看得清');
+bad((x) => { x.outfit.details.push({ slot: 'custom', id: 'hair', part: 'hair', en: 'a hairpin', text: '发簪' }); }, '同名', '自定义 id 和默认槽位同名被拦');
+bad((x) => { for (let i = 0; i < 5; i++) x.outfit.details.push({ slot: 'custom', id: `c${i}`, part: 'body', en: 'a patch', text: '补丁' }); }, '最多', '细节超过 8 个被拦');
 bad((x) => { x.face.en += ' (inferred)'; }, '推断标记', '推断标记写进英文被拦——会被画进画面');
 bad((x) => { x.outfit.top.source = 'guess'; }, 'source', 'source 只收三种');
 {
   const x = clone(INTAKE);
-  x.outfit.details.push({ slot: 'custom', id: 'mole', part: 'face', en: 'Zoom in to an extreme close-up of only the small mole under her left eye.', zh: '左眼下的小痣' });
-  eq(intakeProblems(x).length, 0, '合规的自定义细节放行');
+  x.outfit.details.push({ slot: 'custom', id: 'collar-tag', part: 'neck', en: 'Zoom in to an extreme close-up of only the frayed edge of her collar.', text: '领口磨毛的边' });
+  x.outfit.details.push({ slot: 'custom', id: 'fingertips', part: 'hands', en: 'her fingertips stained green from picking tea', text: '被茶汁染绿的指尖', source: 'stated' });
+  eq(intakeProblems(x).length, 0, '自定义细节放行：只写部位的新写法，和老输入的整句写法');
+  const a = assetFromIntake(x);
+  const hp = buildPrompt(a, 'default', 'detail-fingertips');
+  ok(hp.text.startsWith('Zoom in to an extreme close-up of only her hand: her fingertips stained green') && hp.text.includes('16-year-old'), '自定义「手」：脚本按部位加取景，写明年龄');
+  ok(hp.negative.includes('full body') && hp.refs.join() === 'front-full', '手部细节只挂锚点，反向词禁全身');
+  const mp = buildPrompt(a, 'default', 'detail-collar-tag');
+  ok(mp.text.startsWith('Zoom in to an extreme close-up of only the frayed edge of her collar.') && mp.refs.join() === 'front-full,face-front', '老输入的整句原样使用；领口细节挂锚点 + 大头照');
+  ok(confirmTable(x).includes('〔未实测〕') && !confirmTable(INTAKE).includes('〔未实测〕'), '确认表给自定义细节标「未实测」，默认槽位不标');
+  eq(allViews(a.outfits.default)['detail-fingertips'].tested, false, '视图记下是否实测过');
 }
 {
   const x = clone(INTAKE);
@@ -239,6 +252,12 @@ eq(nounOf(16, 'female'), 'young woman', '十六岁女性叫 young woman');
   ok(staleReasons(a, O, ANCHOR).includes('文字描述改过了'), '改了文字描述 → 锚点也过期');
   a.layers.hair.en = INTAKE.hair.en;
   eq(staleReasons(a, O, ANCHOR).join('/'), '', '改回去就不过期（按指纹比，不按时间）');
+  a.outfits[O].details.push({ slot: 'custom', id: 'fingertips', part: 'hands', en: 'her fingertips stained green', text: '染绿的指尖' });
+  ok(['front-full', 'side-full', 'back-full', 'detail-sleeve'].every((v) => !staleReasons(a, O, v).includes('文字描述改过了')), '加一个细节：其他图不过期（细节只决定拍哪些特写）');
+  a.outfits[O].details.pop();
+  a.outfits[O].details.find((d) => d.slot === 'sleeve').en += ', frayed';
+  ok(staleReasons(a, O, 'detail-sleeve').includes('文字描述改过了') && !staleReasons(a, O, ANCHOR).includes('文字描述改过了'), '改某条细节的文字：只有那张细节图过期');
+  a.outfits[O].details.find((d) => d.slot === 'sleeve').en = INTAKE.outfit.details.find((d) => d.slot === 'sleeve').en;
   delete a.outfits[O].views['face-front'];
   const r = resolveRefs(a, O, buildPrompt(a, O, 'detail-neck'));
   ok(r.refs.length === 1 && r.notes[0].includes('只挂锚点'), '大头照不在：退回只挂锚点，不阻塞，并留注');

@@ -43,9 +43,13 @@ export const INTAKE_TEMPLATE = {
     'lang 是确认表和报告的语言，照用户说话的语言填（zh / en / ja 内置；其他语言先运行 ui-template <lang> 翻一份放进 ui 字段）。',
     'en 进出图提示词，永远英文：不写角色名、不写画风词、不写 (inferred) 之类标记；text 给人看，用 lang 指定的语言写。',
     '年龄、性别、年代推不出来就问用户——只有这三样不许自己编。',
-    'build / skin / backCue 可省：皮肤按年龄给缺省，背面按发型与服装拼。细节默认四个槽位 hair / neck / sleeve / feet，',
-    '只写这个部位本身（例：the tip of one of her long black braids, tied with faded red string），不写“特写”之类取景词——取景由脚本加。',
-    '四个槽位之外要加细节，使用 slot: custom，另写 id（小写英文）、part（hair / face / neck / body / feet），英文写整句并以 “Zoom in to an extreme close-up of only ” 开头。',
+    'build / skin / backCue 可省：皮肤按年龄给缺省，背面按发型与服装拼。',
+    '细节图（最多 8 个）怎么挑：用户点名的优先（source: stated）；没点名就挑这个角色最能认出来的地方（配饰、腰间挂的东西、特别的鞋……）；',
+    '实在没有特别的，用默认槽位 hair / neck / sleeve / feet 兜底——这四个是实测稳定的。',
+    '默认槽位之外使用 slot: custom，另写 id（小写英文）和 part（hair / neck / hands / waist / body / feet）；自定义的会标「未实测」。',
+    '脸上的特征（眼镜、疤、痣）不出细节图：写进 face，正脸大头照里就看得清；用户点名要脸部特写时照这个说明。',
+    '细节只写这个部位本身（例：the tip of one of her long black braids, tied with faded red string），不写 close-up、特写之类取景词——取景由脚本按部位加。',
+    '细节里的东西必须已经写在外貌或服装里：细节只决定拍哪些特写，不给角色添新东西。',
     '写完运行 intake-check，把打印出的确认表给用户看，确认后再 new。',
   ],
   name: '角色名（只用于文件名与报告，不进提示词）',
@@ -165,7 +169,8 @@ function outfitSection(asset, oid, assetDir, outDir, ui) {
   const tierNow = [4, 3, 2, 1].find(has) ?? 0;
   const L = resolveLayers(asset, oid);
   const F = ui.fields;
-  const tag = (f) => (f?.source && f.source !== 'stated' ? `<span class="src">${esc(ui.sources[f.source])}</span>` : '');
+  const tag = (f) => (f?.source && f.source !== 'stated' ? `<span class="src">${esc(ui.sources[f.source])}</span>` : '') +
+    (f?.slot === 'custom' ? `<span class="src">${esc(ui.untested)}</span>` : '');
   const text = (f) => (f?.auto === 'skin' ? ui.defaultSkin[skinBand(L.identity.age)] : f?.auto === 'back' ? ui.defaultBack : human(f));
   const idLine = fmt(ui.identityLine, { text: human(L.identity), age: L.identity.age, gender: ui[L.identity.gender] ?? L.identity.gender });
   const rows = [[F.identity, L.identity, idLine], [F.face, L.face], [F.hair, L.hair], ...(L.build ? [[F.build, L.build]] : []), [F.top, L.top], [F.bottom, L.bottom],
@@ -179,7 +184,7 @@ function outfitSection(asset, oid, assetDir, outDir, ui) {
     const bad = (cur?.gates ?? []).filter((g) => !g.ok);
     const state = !cur ? `<span class="dim">${esc(ui.stNone)}</span>` : stale.length ? `<span class="bad">${esc(ui.stStale)}</span> ${esc(stale.map((c) => staleText(c, ui)).join('; '))}`
       : bad.length ? `<span class="bad">${esc(ui.stGate)}</span> ${esc(bad.map((g) => gateLabel(g, spec)).join('; '))}` : '<span class="ok">✓</span>';
-    return `<tr><td>${esc(label(view))}</td><td>${spec.tier}</td><td>${cur ? `v${cur.v}` : ''}</td><td>${esc(cur?.model ?? '')}</td><td>${esc(cur?.seed ?? '')}</td><td class="mono">${esc(cur?.id ?? '')}</td><td>${state}</td></tr>`;
+    return `<tr><td>${esc(label(view))}${spec.tested === false ? ` <span class="src">${esc(ui.untested)}</span>` : ''}</td><td>${spec.tier}</td><td>${cur ? `v${cur.v}` : ''}</td><td>${esc(cur?.model ?? '')}</td><td>${esc(cur?.seed ?? '')}</td><td class="mono">${esc(cur?.id ?? '')}</td><td>${state}</td></tr>`;
   }).join('');
   const models = new Set(Object.keys(V).map((v) => current(outfit, v)?.model).filter(Boolean));
   const notes = [

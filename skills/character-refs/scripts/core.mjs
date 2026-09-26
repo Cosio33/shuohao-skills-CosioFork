@@ -41,6 +41,13 @@ export const DETAIL_SLOTS = {
   sleeve: { label: '袖口', part: 'body' },
   feet: { label: '鞋', part: 'feet' },
 };
+/**
+ * 自定义细节的部位：模型只写「画什么」，取景由脚本按部位加（和默认槽位一样）。
+ * 默认四个槽位是实测稳定的；自定义部位没有实测，确认表和报告里标「未实测」。
+ */
+// 没有 face：脸上的特征（眼镜、疤、痣）正脸大头照里已经看得清；Qwen 实测 3 种写法 × 2 种子，全部画成整张大头照
+export const DETAIL_PARTS = ['hair', 'neck', 'hands', 'waist', 'body', 'feet'];
+export const MAX_DETAILS = 8;
 /** 这些部位的细节额外挂正脸大头照当参考（脸部像素更多）；其余只挂锚点。 */
 const FACE_PARTS = new Set(['hair', 'face', 'neck']);
 
@@ -49,7 +56,7 @@ export function detailViews(outfit) {
   for (const d of outfit?.details ?? []) {
     const part = d.slot === 'custom' ? d.part : DETAIL_SLOTS[d.slot]?.part;
     out[`detail-${d.slot === 'custom' ? d.id : d.slot}`] = {
-      tier: 3, ratio: '1:1', kind: 'detail', part, detail: d,
+      tier: 3, ratio: '1:1', kind: 'detail', part, detail: d, tested: d.slot !== 'custom',
       label: d.slot === 'custom' ? (human(d) || d.id) : DETAIL_SLOTS[d.slot].label,
       refs: FACE_PARTS.has(part) ? ['front-full', 'face-front'] : ['front-full'],
     };
@@ -127,10 +134,18 @@ export function resolveLayers(asset, outfitId = 'default') {
 }
 
 /** 文字层指纹：只算参与出图的英文。改了它，照旧文字出的图就过期。 */
-export function layersHash(L) {
-  return sha256(JSON.stringify([L.identity.age, L.identity.gender, en(L.identity), en(L.face), en(L.hair), en(L.build), en(L.skin),
-    en(L.top), en(L.bottom), en(L.backCue), L.details.map((d) => [d.slot, d.id ?? null, d.part ?? null, en(d)])])).slice(0, 16);
+/**
+ * 某一张图的文字指纹：人本身的描述（身份、脸、头发、身形、皮肤、上下装、背面）+ 细节图自己那一条细节。
+ * 细节只决定「拍哪些特写」，不算进其他视图——加一个细节只多出一张图，不会让整组过期；
+ * 改某条细节的文字，只有那张细节图过期。要改角色本身的样子，改外貌和服装字段。
+ */
+export function viewLayersHash(L, spec) {
+  const base = [L.identity.age, L.identity.gender, en(L.identity), en(L.face), en(L.hair), en(L.build), en(L.skin),
+    en(L.top), en(L.bottom), en(L.backCue)];
+  const d = spec?.detail;
+  return sha256(JSON.stringify(d ? [...base, [d.slot, d.id ?? null, d.part ?? null, en(d)]] : base)).slice(0, 16);
 }
+
 // medium 只在 drawn 时计入，老资产（写实、没有 medium 字段）的指纹不变
 export const lookHash = (look) => sha256(JSON.stringify([look.style, look.clean, look.neg, ...(look.medium === 'drawn' ? ['drawn'] : [])])).slice(0, 16);
 
@@ -208,12 +223,19 @@ export function buildPrompt(asset, outfitId, viewId, look = DEFAULT_LOOK) {
       const d = v.detail;
       const age = L.identity.age;
       const skin = `Any visible skin is the skin of a ${age}-year-old.`;
-      const frame = {
+      const byKey = {
         hair: `Zoom in to an extreme close-up ${drawn ? 'view' : 'macro photo'} of only ${en(d)}. It fills the entire frame and ${p} face is not visible; individual hair strands and fine texture are sharp.`,
         neck: `Zoom in to an extreme close-up of only ${p} neckline: ${en(d)} fill the entire frame. The frame is cropped below ${p} chin, so ${p} face is not visible. ${skin}`,
         sleeve: `Zoom in to an extreme close-up of only one sleeve cuff at the wrist: ${en(d)}. The cuff fills the entire frame; no face and no full body. ${skin}`,
         feet: `Zoom in to an extreme close-up of only ${p} feet and ankles: ${en(d)}, on a plain white floor. Only the feet and ankles are visible; no face and no upper body. ${skin}`,
-      }[d.slot] ?? sentence(en(d));   // custom：用户自己写的整句，必须以 Zoom in 开头（校验里拦）
+        // 以下是自定义部位的取景（未实测的写法同样守「第一句只写这个部位、写清画面边界」）
+        hands: `Zoom in to an extreme close-up of only ${p} hand: ${en(d)}. The hand fills the entire frame; no face and no full body. ${skin}`,
+        waist: `Zoom in to an extreme close-up of only ${p} waist: ${en(d)}. It fills the entire frame; no face, no head and no legs.`,
+        body: `Zoom in to an extreme close-up of only ${en(d)}. It fills the entire frame; no face and no full body. ${skin}`,
+      };
+      // 默认槽位按槽位取景；自定义按部位；老输入里自己写了整句（以 Zoom in 开头）的原样使用
+      const legacy = d.slot === 'custom' && /^Zoom in to /.test(String(d.en ?? ''));
+      const frame = legacy ? sentence(en(d)) : byKey[d.slot === 'custom' ? d.part : d.slot];
       const two = v.refs.length > 1;
       text = `${frame} Same person, same clothing and materials as in the reference image${two ? 's' : ''}. ${look.style} ` +
         'Plain white background wherever any background shows. No text, no watermark.';
@@ -264,6 +286,7 @@ export function intakeProblems(x) {
     need(o.top, 'outfit.top 上装');
     need(o.bottom, 'outfit.bottom 下装');
     const seen = new Set();
+    if ((o.details ?? []).length > MAX_DETAILS) p.push(`细节最多 ${MAX_DETAILS} 个（现在 ${o.details.length} 个）——挑最能认出这个角色的`);
     for (const [i, d] of (o.details ?? []).entries()) {
       const label = `outfit.details[${i}]`;
       if (d.slot !== 'custom' && !DETAIL_SLOTS[d.slot]) p.push(`${label} 的 slot 只能是 ${Object.keys(DETAIL_SLOTS).join(' / ')} / custom`);
@@ -272,9 +295,12 @@ export function intakeProblems(x) {
       seen.add(key);
       if (d.slot === 'custom') {
         if (!/^[a-z0-9-]+$/.test(String(d.id ?? ''))) p.push(`${label} 自定义细节要有 id（小写字母、数字、连字符）`);
-        if (!['hair', 'face', 'neck', 'body', 'feet'].includes(d.part)) p.push(`${label} 自定义细节要写 part：hair / face / neck / body / feet`);
-        if (!/^Zoom in to /.test(String(d.en ?? ''))) p.push(`${label} 自定义细节的英文必须以 “Zoom in to ” 开头——改图模型只有第一句要求拉近才会拉近`);
+        if (d.part === 'face') p.push(`${label} 脸上的特征（眼镜、疤、痣）不单独出细节图：正脸大头照里已经看得清，Qwen 实测也只会画成整张大头照——写进 face 字段就够了`);
+        else if (!DETAIL_PARTS.includes(d.part)) p.push(`${label} 自定义细节要写 part：${DETAIL_PARTS.join(' / ')}`);
+        if (DETAIL_SLOTS[d.id]) p.push(`${label} 的 id 不能和默认槽位同名（${d.id}）`);
       }
+      const e = String(d.en ?? '');
+      if (!/^Zoom in to /.test(e) && /\b(close-?up|zoom|macro|extreme)\b/i.test(e)) p.push(`${label} 只写部位本身，不写 close-up / zoom 这类取景词——取景由脚本按部位加`);
       need(d, label);
     }
   }
@@ -288,7 +314,7 @@ export const padDisplay = (s, w) => s + ' '.repeat(Math.max(0, w - displayWidth(
 /** 确认表：给人看，按 lang 出，每项标来源。缺省值也列出来，标「默认」。 */
 export function confirmTable(x) {
   const ui = uiFor(x.lang ?? 'zh', x.ui);
-  const tag = (f) => (f?.source && f.source !== 'stated' ? `  〔${ui.sources[f.source]}〕` : '');
+  const tag = (f) => (f?.source && f.source !== 'stated' ? `  〔${ui.sources[f.source]}〕` : '') + (f?.slot === 'custom' ? `  〔${ui.untested}〕` : '');
   const id = x.identity;
   const skin = x.skin ?? { text: ui.defaultSkin[skinBand(id.age)], source: 'default' };
   const back = x.backCue ?? { text: ui.defaultBack, source: 'default' };
@@ -354,7 +380,8 @@ export function staleCodes(asset, outfitId, viewId) {
   const cur = current(outfit, viewId);
   if (!cur) return [];
   const why = [];
-  if (cur.layersHash !== layersHash(resolveLayers(asset, outfitId))) why.push({ code: 'layers' });
+  const L = resolveLayers(asset, outfitId);
+  if (cur.layersHash !== viewLayersHash(L, allViews(outfit)[viewId])) why.push({ code: 'layers' });
   if (cur.lookHash !== lookHash(outfit.look)) why.push({ code: 'look' });
   for (const r of cur.refs ?? []) {
     const now = current(outfit, r.view);
@@ -470,7 +497,7 @@ export function recordVersion(asset, oid, view, { buf, model, seed = null, promp
     v, id, file: `${oid}/${view}.v${v}.png`, sha256: sha256(out), model, seed,
     prompt: prompt.text, negative: prompt.negative,
     refs: refs.map(({ view: rv, v: rvv, sha256: rs }) => ({ view: rv, v: rvv, sha256: rs })), notes,
-    layersHash: layersHash(resolveLayers(asset, oid)), lookHash: lookHash(outfit.look),
+    layersHash: viewLayersHash(resolveLayers(asset, oid), spec), lookHash: lookHash(outfit.look),
     gates: gates(out, spec.ratio, spec.kind), createdAt: now.toISOString(),
     ...(view === ANCHOR ? { confirmed: confirmMode === 'auto' ? 'auto' : false } : {}),
   };
