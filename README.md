@@ -79,6 +79,12 @@ node scripts/report-selftest.mjs   # 92 项断言，不起浏览器
 
 ![分镜报告](skills/novel-storyboard/assets/report.webp)
 
+不从小说出发也行，给任何一个角色真出参考图：
+
+**character-refs · 角色参考图（锚点 GPT 出、其余 Qwen 出，全部为 skill 实际生成）**
+
+![角色参考图报告](skills/character-refs/assets/report.webp)
+
 ## 安装
 
 ```bash

@@ -6,6 +6,8 @@
 
 **Actually generates** reference images for a character from any story — a novel adaptation, your own original story, or a one-off character; no source text needed. Describe a character in one message and get a set of reference images ready to attach to video models (H3 / Wan / Seedance).
 
+![Character references report](assets/report.webp)
+
 **Each set has a single root**: a front full-body anchor. It is the only text-to-image generation; the headshot, profile, back view and details all reference only that anchor, never each other — so a bad image is regenerated on its own without knocking anything else over.
 
 ## Tiers — tier 2 by default
