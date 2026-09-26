@@ -18,11 +18,12 @@
 | --- | --- |
 | [**novel-outline**](skills/novel-outline) | 把一本小说改编成短剧大纲五件套：改编说明、人物表、爽点表、分集梗概、资产清单（含叙事道具表）。14 道质量门全部脚本检查，支持已有大纲的体检模式 |
 | [**novel-characters**](skills/novel-characters) | 把大纲定下的角色做成角色设定集：人物画像、形象提示词、音色提示词、角色设定图。吃 outline.json 预填角色表，报告语言可选 |
+| [**novel-character-refs**](skills/novel-character-refs) | 给 AI 短剧**真出**角色参考图：一段话描述角色，拆字段、补全、确认后先出正面全身锚点，大头照、90° 侧面、背面、细节图都只参考这张锚点，按需分档。每张图带标识、可单独重出，过期自动标出。支持 Qwen Image（ComfyUI）、codex 出图、GPT Image 2 API、自定义命令 |
 | [**novel-art**](skills/novel-art) | 给 AI 短剧出美术设定集（场景 + 叙事道具）：一致性锚点、光照与状态变体、尺度参照、无人无手白底提示词。吃 outline.json 预填清单，10 道质量门全部脚本检查 |
 | [**novel-script**](skills/novel-script) | 给 AI 短剧写剧本：场次 + 节拍流（动作与台词交替），逐集时长按语速确定性折算，钩子前 3 拍冷开场兑现是门，台词本按角色聚合带音色提示词直接对接 TTS。10 道质量门全部脚本检查 |
 | [**novel-storyboard**](skills/novel-storyboard) | 给 AI 短剧出分镜：段（一次生成 ≤15 秒）→ 分镜（2–5 秒硬门）→ 分镜图（主图钉 0.00 秒、子图钉各自切点），MiniMax H3 提示词的对齐指令与切点时刻逐字对账；分镜图拿设定图当参考图真出图，export 一键出 H3 / Seedance 投产包。18 道质量门全部脚本检查 |
 
-**五个 skill 的报告都支持中英双语界面**：默认中文，`render --lang en` 出全英文报告（数据内容保持原文）。
+**五段管线 skill 的报告都支持中英双语界面**：默认中文，`render --lang en` 出全英文报告（数据内容保持原文）。novel-character-refs 的报告目前只有中文界面。
 
 ## AI 短剧交流社群
 
@@ -107,7 +108,8 @@ ln -s "$PWD/skills/novel-characters" ~/.codex/skills/novel-characters
 | --- | --- | --- |
 | **Node** | 必需 | ≥ 18。skill 的脚本只用标准库，**没有 npm 依赖，不需要 install** |
 | **模型额度** | 必需 | 用你当前会话的额度，**不需要任何 API key** |
-| **codex CLI** | 可选 | 只是一个能跑这些 skill 的运行环境，跟 Claude Code 等价。**skill 不出图**，所以不需要它的任何本机能力 |
+| **codex CLI** | 可选 | 只是一个能跑这些 skill 的运行环境，跟 Claude Code 等价。五段管线 skill **不出图**，不需要它的任何本机能力 |
+| **出图模型** | 只有 novel-character-refs 需要 | 四选一：自己的 ComfyUI（Qwen Image）、本机 codex 内置出图（吃 ChatGPT 订阅额度）、OpenAI API key（GPT Image 2）、自定义命令。第一次使用时选 |
 
 ## 仓库约定
 

@@ -1,0 +1,84 @@
+[![中文](https://img.shields.io/badge/%E4%B8%AD%E6%96%87-f2e3e3?style=for-the-badge&labelColor=f2e3e3&color=b07070)](README.md)
+[![English](https://img.shields.io/badge/English-8b1a1a?style=for-the-badge)](README.en.md)
+[![Follow on X](https://img.shields.io/badge/Follow-%40eternityspring-b07070?style=for-the-badge&labelColor=8b1a1a&logo=x&logoColor=f2e3e3)](https://x.com/eternityspring)
+
+# novel-character-refs
+
+**Actually generates** character reference images for AI short drama. Describe a character in one message and get a set of reference images ready to attach to video models (H3 / Wan / Seedance).
+
+**Each set has a single root**: a front full-body anchor. It is the only text-to-image generation; the headshot, profile, back view and details all reference only that anchor, never each other — so a bad image is regenerated on its own without knocking anything else over.
+
+## Tiers, generated on demand
+
+| Tier | Contents | When |
+| --- | --- | --- |
+| 1 (default) | Front full body (the anchor) | Always |
+| 2 | Front headshot, 90° profile, back view | Close-ups, side-on shots, shots from behind |
+| 3 | 4 details: hair / hair accessory, neckline, cuff, shoes | Close-ups of accessories or garment details |
+| 4 (off by default) | 45° headshot | Only when asked |
+
+Based on an H3 test: with only the full-body anchor attached, costume and back view come out right but the face drifts; adding a headshot brings the face closest. Most characters need tier 1 only, and the headshot is the first thing to add.
+
+## One-shot input
+
+No form to fill in. One message is enough — the agent splits it into identity, face, hair, build, skin, top, bottom and detail fields, fills the gaps, tags each field's source (stated / inferred / default) and prints a confirmation table. It only asks if age, gender or era can't be inferred.
+
+## Models
+
+Four options, chosen on first use and kept after that:
+
+| | Notes |
+| --- | --- |
+| `qwen` | Qwen Image 2.1 on your own ComfyUI. 25–50 s per image, exact sizes, no subscription quota |
+| `codex` | Local codex built-in image generation (GPT). No API key, but it uses your ChatGPT plan quota (Plus hits the limit after ~25 images) |
+| `openai` | OpenAI Images API, gpt-image-2 by default, pay per use |
+| `custom:<name>` | Your own command, templated with `{prompt_file}` `{refs}` `{out}` `{width}` `{height}` |
+
+**The anchor and the derived images can use different models, and any single image can be regenerated with another one.** Consistency comes from sharing one anchor, not one model — Qwen anchor + GPT derivatives, GPT anchor + Qwen derivatives, and mixing both within one set all held together in testing. Each image records its model; mixing only raises a note.
+
+## Labels and regeneration
+
+Every image carries a label `character/outfit/view/version` (e.g. `阿禾/default/face-front/v2`) in its filename, in `asset.json` and in the PNG metadata.
+
+```bash
+node scripts/novel-character-refs.mjs gen 阿禾/asset.json detail-neck --model codex   # regenerate one image as a new version
+```
+
+Old versions are never overwritten. Only three things are frozen: the anchor file, the style snapshot and the text description. When one changes, whatever depends on it is marked stale: a new anchor makes everything else stale; a new headshot makes the hair / neckline details stale; an edited description makes everything stale. Stale images are marked, never deleted.
+
+## Quality gates
+
+Checked in code; `check` exits 1 on failure: side length 300–5760 px, aspect ratio 0.4–2.5, the view's target ratio (2:3 / 4:5 / 1:1), ≤ 20 MB (the intersection of H3 / Wan / Seedance reference limits), a white background (all four edges for full-body views, top and upper sides only for headshots, explicitly skipped for details), and staleness. **The gates can't judge likeness, angle or framing** — look at the images.
+
+## Report
+
+`render` writes a self-contained HTML page: a single card at tier 1, a character-sheet layout from tier 2 (headshot on the left, front / profile / back top right, detail strip bottom right), details hidden by default with a one-click toggle. The layout is done in code rather than generated as one composite image — a composite used as a reference makes models draw the person smaller. The report UI is Chinese only for now.
+
+## Command line
+
+```bash
+node scripts/novel-character-refs.mjs config --model qwen --confirm-anchor yes --qwen-env-file ~/comfy.env
+node scripts/novel-character-refs.mjs intake-check examples/阿禾-intake.json
+node scripts/novel-character-refs.mjs new examples/阿禾-intake.json --out out/
+node scripts/novel-character-refs.mjs gen out/阿禾/asset.json --tier 1
+node scripts/novel-character-refs.mjs confirm out/阿禾/asset.json
+node scripts/novel-character-refs.mjs gen out/阿禾/asset.json --tier 2 --reason "close-up in E03"
+node scripts/novel-character-refs.mjs check out/阿禾/asset.json
+node scripts/novel-character-refs.mjs render out/阿禾/asset.json --out out/character-refs.html
+```
+
+## Selftest
+
+```bash
+node scripts/selftest.mjs
+```
+
+140 assertions, no model calls, no quota. The Qwen and GPT Image adapters are checked against local mock servers; the full pipeline runs end to end with a custom command that produces blank white images.
+
+## Known limitations
+
+- Photographic realism is the only style
+- Small scars tend to look like fresh wounds; large details like double-breasted buttons get framed too wide
+- Qwen renders coarse cotton in neckline details with a velvet-like sheen; regenerate that one with codex
+- The `openai` adapter has only been checked for request format, not run with a real key
+- **Tested on macOS + Node 24 only**
