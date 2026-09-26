@@ -61,7 +61,7 @@ function chunk(type, data) {
  * 带透明度的 PNG 铺到白底上，另存成不透明的 RGB（8 位）。
  * GPT（codex）出的图是透明背景：看图软件显示成白底，实际像素是透明的黑，
  * 视频模型拿到怎么处理背景说不准——参考图一律存成实打实的白底。
- * 不带透明度、或不是 8 位非隔行（解不开）就原样返回。
+ * 不带透明度、透明度通道全是不透明、或不是 8 位非隔行（解不开），都原样返回。
  */
 export function flattenAlpha(buf) {
   if (!isPng(buf)) return { buf, changed: false };
@@ -70,6 +70,10 @@ export function flattenAlpha(buf) {
   const img = decode(buf);
   if (!img) return { buf, changed: false };
   const { width: w, height: h, bpp, px } = img;
+  // 带透明度通道但每个像素都不透明（Qwen 就是）：原样保留，不改文件、不留注
+  let anyClear = false;
+  for (let i = bpp - 1; i < px.length; i += bpp) if (px[i] < 255) { anyClear = true; break; }
+  if (!anyClear) return { buf, changed: false };
   const stride = w * 3;
   const raw = Buffer.alloc(h * (stride + 1));
   for (let y = 0; y < h; y++) {

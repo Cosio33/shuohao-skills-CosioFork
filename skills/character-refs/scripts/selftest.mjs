@@ -76,6 +76,17 @@ function rgbaPng(w, h) {
   const mid = (300 * 400 + 200) * 3;
   ok(d.px[mid] === 30 && d.px[mid + 2] === 160, '不透明的部分颜色不变');
   eq(flattenAlpha(solidPng(10, 10)).changed, false, '本来不透明的图原样返回');
+  {
+    const opaque = decode(rgbaPng(40, 60));
+    for (let i = 3; i < opaque.px.length; i += 4) opaque.px[i] = 255;
+    const raw = Buffer.alloc(60 * (40 * 4 + 1));
+    for (let y = 0; y < 60; y++) opaque.px.copy(raw, y * 161 + 1, y * 160, (y + 1) * 160);
+    const t = rgbaPng(40, 60);
+    const idat = chunks(t).find((c) => c.type === 'IDAT');
+    const ck = (d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from('IDAT'), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc32(td)); return Buffer.concat([l, td, c]); };
+    const opq = Buffer.concat([t.subarray(0, idat.start), ck(deflateSync(raw)), t.subarray(idat.end)]);
+    eq(flattenAlpha(opq).changed, false, '带透明度通道但全是不透明（Qwen 出的就是）：原样保留、不留注');
+  }
 }
 
 /* ---------------- 检查门 ---------------- */
