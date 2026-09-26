@@ -83,7 +83,7 @@ node {baseDir}/scripts/character-refs.mjs config --show
    - `custom:<名字>` —— 用户自己的出图命令，见 `references/models.md`
 2. **派生图使用哪个模型**：默认与主图相同。可以分开（比如锚点 GPT、派生 Qwen）
 3. **出完锚点要不要停下来等人确认**：推荐 `yes`——锚点是全组的根，它不对后面全白出。
-   选 `no` 则自动放行，报告里标「未经人工确认」
+   选 `no` 则自动放行，报告里标「未经人工确认」；**没过检查门的锚点不会自动放行**，要人看过再 `confirm` 或重出
 
 ```bash
 node {baseDir}/scripts/character-refs.mjs config --model qwen --confirm-anchor yes --qwen-env-file <.env 路径>
@@ -236,7 +236,7 @@ node {baseDir}/scripts/character-refs.mjs render <asset.json>... --out <输出�
 node {baseDir}/scripts/selftest.mjs
 ```
 
-222 项断言，不调模型、不花额度：PNG 标识读写、检查门、输入校验、多语言确认表与报告、画风预设与换画风、提示词、过期传导、出图适配器的请求格式（Qwen 与 GPT Image 使用本地假服务器）、
+229 项断言，不调模型、不花额度：PNG 标识读写、检查门、输入校验、多语言确认表与报告、画风预设与换画风、提示词、过期传导、出图适配器的请求格式（Qwen 与 GPT Image 使用本地假服务器）、
 以及使用自定义命令跑通的完整流程。改完脚本先跑这个。
 
 ## 自带样例

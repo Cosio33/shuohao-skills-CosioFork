@@ -10,7 +10,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chunks, crc32, decode, pngInfo, readText, solidPng, withText } from './png.mjs';
+import { chunks, crc32, decode, flattenAlpha, pngInfo, readText, solidPng, withText } from './png.mjs';
+import { deflateSync } from 'node:zlib';
 import {
   ANCHOR, DEFAULT_LOOK, allViews, anchorUsable, assetFromIntake, buildPrompt, confirmTable, current, defaultSkin, gates,
   intakeProblems, nounOf, resolveLayers, pronouns, recordVersion, resolveRefs, staleReasons, viewsOfTier,
@@ -50,6 +51,31 @@ const TMP = mkdtempSync(join(tmpdir(), 'character-refs-selftest-'));
   eq(chunks(again).at(-1).type, 'IEND', 'IEND 仍在最后');
   const px = decode(tagged);
   ok(px && px.px[0] === 255 && px.px.length === 40 * 60 * 3, '打标识后像素不变、能解');
+}
+
+/* ---------------- 透明背景 ---------------- */
+// 手搓一张 RGBA：四周透明（像素是透明的黑，和 codex 出的一样），中间一块不透明的蓝
+function rgbaPng(w, h) {
+  const raw = Buffer.alloc(h * (w * 4 + 1));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const o = y * (w * 4 + 1) + 1 + x * 4;
+    const inside = x > w / 4 && x < (w * 3) / 4 && y > h / 4 && y < (h * 3) / 4;
+    raw.set(inside ? [30, 60, 160, 255] : [0, 0, 0, 0], o);
+  }
+  const ck = (t, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc32(td)); return Buffer.concat([l, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), ck('IHDR', ihdr), ck('IDAT', deflateSync(raw)), ck('IEND', Buffer.alloc(0))]);
+}
+{
+  const t = rgbaPng(400, 600);
+  ok(Object.fromEntries(gates(t, '2:3', 'full').map((x) => [x.id, x])).white.ok, '透明背景的边按白算，不误判成 0%');
+  const f = flattenAlpha(t);
+  ok(f.changed && pngInfo(f.buf).colorType === 2, '透明 PNG 铺白后存成不透明的 RGB');
+  const d = decode(f.buf);
+  ok(d.px[0] === 255 && d.px[1] === 255 && d.px[2] === 255, '透明的黑铺成纯白');
+  const mid = (300 * 400 + 200) * 3;
+  ok(d.px[mid] === 30 && d.px[mid + 2] === 160, '不透明的部分颜色不变');
+  eq(flattenAlpha(solidPng(10, 10)).changed, false, '本来不透明的图原样返回');
 }
 
 /* ---------------- 检查门 ---------------- */
@@ -236,6 +262,12 @@ eq(nounOf(16, 'female'), 'young woman', '十六岁女性叫 young woman');
   v1.confirmed = true;
   ok(anchorUsable(a, O).ok, '确认后可以派生');
   ok(add(ANCHOR, 'auto').confirmed === 'auto', '配置为不确认：记成 auto，报告里照样标出');
+  {
+    const b = assetFromIntake(INTAKE);
+    const dark = recordVersion(b, O, ANCHOR, { buf: solidPng(396, 594, [20, 20, 20]), model: 'qwen', prompt: buildPrompt(b, O, ANCHOR), confirmMode: 'auto' }).version;
+    eq(dark.confirmed, false, '配置为不确认，但锚点没过门：自动确认不放行');
+    eq(anchorUsable(b, O).ok, false, '没过门的锚点不能拿来派生');
+  }
   current(a.outfits[O], ANCHOR).confirmed = true;
   const face = add('face-front');
   eq(face.refs[0].v, 2, '派生图记下参考的锚点版本');

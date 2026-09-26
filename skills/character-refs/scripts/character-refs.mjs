@@ -11,6 +11,7 @@ import {
 } from './core.mjs';
 import { BUILTIN, fmt, uiFor, uiTemplate } from './i18n.mjs';
 import { DEFAULT_LOOK_ID, LOOKS, findLook, lookName, lookProblems, lookSnapshot } from './looks.mjs';
+import { flattenAlpha } from './png.mjs';
 import { CONFIG_PATH, configMissing, generate, loadConfig, maskConfig, modelKind, saveConfig } from './models.mjs';
 
 const readJson = (p) => JSON.parse(readFileSync(resolve(p), 'utf8'));
@@ -104,6 +105,8 @@ async function genViews(assetPath, viewIds, opts) {
       console.error(`✗ ${view}：${e.message}`);
       continue;
     }
+    const flat = flattenAlpha(buf);
+    if (flat.changed) { buf = flat.buf; notes.push('模型给的是透明背景，已铺成白底'); }
     const { version, buf: out } = recordVersion(asset, oid, view, {
       buf, model, seed, prompt: pr, refs, notes, confirmMode: cfg.confirmAnchor && !opts.noConfirm ? 'wait' : 'auto',
     });
@@ -114,6 +117,7 @@ async function genViews(assetPath, viewIds, opts) {
     writeJson(assetPath, asset);   // 每出一张就落盘：中途断了也不丢
     const bad = g.filter((x) => !x.ok);
     console.log(`${bad.length ? '△' : '✓'} ${ident}  ${model}  ${Math.round((Date.now() - t0) / 1000)}s${bad.length ? `  门未过：${bad.map((x) => `${x.label}（${x.detail}）`).join('；')}` : ''}${notes.length ? `  注：${notes.join('；')}` : ''}`);
+    if (isAnchor && version.confirmed === false && !(cfg.confirmAnchor && !opts.noConfirm)) console.log(`  锚点没过门，自动确认不放行：看过图后运行 confirm ${assetPath}，或者重出锚点`);
     if (isAnchor && cfg.confirmAnchor && !opts.noConfirm) console.log(`  锚点待确认：看过图后运行 confirm ${assetPath}${oid !== 'default' ? ` --outfit ${oid}` : ''}`);
   }
   return failed;
@@ -412,7 +416,7 @@ async function main(argv) {
     if (existsSync(path)) throw new Error(`${path} 已存在——改描述请直接编辑它（照旧描述出的图会自动标过期），或换个目录`);
     mkdirSync(dir, { recursive: true });
     writeJson(path, assetFromIntake(x, look));
-    console.log(`✓ ${path}（画风：${lookName(look)}）\n  下一步：gen ${path} --tier 1`);
+    console.log(`✓ ${path}（画风：${lookName(look)}）\n  下一步：gen ${path}（先出锚点，再出大头照、侧面、背面）`);
     return;
   }
 

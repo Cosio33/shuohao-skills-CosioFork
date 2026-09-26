@@ -443,7 +443,8 @@ function borderWhite(img, upperOnly) {
       const i = (y * w + x) * bpp;
       n++;
       const g = bpp < 3;
-      if (px[i] >= 235 && (g || (px[i + 1] >= 235 && px[i + 2] >= 235))) white++;
+      const transparent = (bpp === 2 || bpp === 4) && px[i + bpp - 1] < 128;   // 透明的边按白算（落盘前本来也会铺白）
+      if (transparent || (px[i] >= 235 && (g || (px[i + 1] >= 235 && px[i + 2] >= 235)))) white++;
     }
   }
   return white / n;
@@ -494,13 +495,15 @@ export function recordVersion(asset, oid, view, { buf, model, seed = null, promp
   const v = Math.max(0, ...slot.versions.map((x) => x.v)) + 1;
   const id = `${asset.name}/${oid}/${view}/v${v}`;
   const out = isPng(buf) ? withText(buf, { 'shuohao:id': id, 'shuohao:model': model, 'shuohao:refs': refs.map((r) => `${r.view}/v${r.v}`).join(',') }) : buf;
+  const g = gates(out, spec.ratio, spec.kind);
   const version = {
     v, id, file: `${oid}/${view}.v${v}.png`, sha256: sha256(out), model, seed,
     prompt: prompt.text, negative: prompt.negative,
     refs: refs.map(({ view: rv, v: rvv, sha256: rs }) => ({ view: rv, v: rvv, sha256: rs })), notes,
     layersHash: viewLayersHash(resolveLayers(asset, oid), spec), lookHash: lookHash(outfit.look),
-    gates: gates(out, spec.ratio, spec.kind), createdAt: now.toISOString(),
-    ...(view === ANCHOR ? { confirmed: confirmMode === 'auto' ? 'auto' : false } : {}),
+    gates: g, createdAt: now.toISOString(),
+    // 配置为自动确认时，也只放行过了门的锚点：没过门的锚点要人看过再 confirm，或者重出
+    ...(view === ANCHOR ? { confirmed: confirmMode === 'auto' && g.every((x) => x.ok) ? 'auto' : false } : {}),
   };
   slot.versions.push(version);
   slot.current = v;

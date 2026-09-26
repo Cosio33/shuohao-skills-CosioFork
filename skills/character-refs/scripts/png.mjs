@@ -58,6 +58,34 @@ function chunk(type, data) {
 }
 
 /**
+ * 带透明度的 PNG 铺到白底上，另存成不透明的 RGB（8 位）。
+ * GPT（codex）出的图是透明背景：看图软件显示成白底，实际像素是透明的黑，
+ * 视频模型拿到怎么处理背景说不准——参考图一律存成实打实的白底。
+ * 不带透明度、或不是 8 位非隔行（解不开）就原样返回。
+ */
+export function flattenAlpha(buf) {
+  if (!isPng(buf)) return { buf, changed: false };
+  const { colorType } = pngInfo(buf);
+  if (colorType !== 4 && colorType !== 6) return { buf, changed: false };
+  const img = decode(buf);
+  if (!img) return { buf, changed: false };
+  const { width: w, height: h, bpp, px } = img;
+  const stride = w * 3;
+  const raw = Buffer.alloc(h * (stride + 1));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * bpp, o = y * (stride + 1) + 1 + x * 3;
+      const a = px[i + bpp - 1] / 255;
+      const [r, g, b] = bpp === 2 ? [px[i], px[i], px[i]] : [px[i], px[i + 1], px[i + 2]];
+      raw[o] = Math.round(r * a + 255 * (1 - a)); raw[o + 1] = Math.round(g * a + 255 * (1 - a)); raw[o + 2] = Math.round(b * a + 255 * (1 - a));
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return { buf: Buffer.concat([SIG, chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]), changed: true };
+}
+
+/**
  * 写入 iTXt（UTF-8 文本块）。标识里有中文角色名，tEXt 只收 Latin-1，所以用 iTXt。
  * 同一个关键字已存在就替换，插在 IEND 之前。
  */
