@@ -24,7 +24,8 @@
       "bottom": { … },
       "details": [ { "slot": "hair", "en": "…", "text": "…", "source": "stated" }, … ],
       "overrides": {},                // 这套造型要改的角色层，比如换发型：{ "hair": { … } }
-      "look": { "id": "realistic-photo", "label": "…", "style": "…", "clean": "…", "neg": "…" },   // 画风快照
+      "look": { "id": "anime", "label": { "zh": "动漫", "en": "Anime", "ja": "アニメ" }, "medium": "drawn",
+                "style": "…", "clean": "…", "neg": "…" },   // 画风快照；medium: photo 照片 / drawn 画出来的
       "upgrades": [ { "tier": 2, "reason": "E03 有面部特写", "at": "…" } ],
       "views": {
         "front-full": {

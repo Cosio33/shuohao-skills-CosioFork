@@ -43,6 +43,23 @@ agent 拆进身份、脸、头发、身形、皮肤、上装、下装、细节�
 **主图和派生图可以使用不同模型，重出单张也能换。**一致性来自同一张锚点，不来自同一个模型——
 Qwen 锚点 + GPT 派生、GPT 锚点 + Qwen 派生、同一组里混用，实测都衔接得上。每张图记录自己的模型，混用只提醒。
 
+## 画风
+
+内置两个预设，名字中英文都认：
+
+```bash
+node scripts/character-refs.mjs new 阿禾-intake.json --out out/ --look 动漫      # 或 --look anime
+node scripts/character-refs.mjs looks                                            # 列出全部预设
+```
+
+| 预设 | 名字 | 实测 |
+| --- | --- | --- |
+| 写实照片（默认） | `写实` / `realistic` | Qwen 与 GPT 多个角色 |
+| 动漫 | `动漫` / `anime` | Qwen 四档全部通过 |
+
+要自己的画风：`look-template 动漫 > my-look.json`，改完 `--look my-look.json`。已有角色换画风用 `restyle`，
+换完全组标过期、从锚点重出。画风和角色是分开的两层，角色描述里不许写画风词——同一个阿禾，换个预设就是另一种画法。
+
 ## 标识与重出
 
 每张图都有标识 `角色/造型/视图/版本`（如 `阿禾/default/face-front/v2`），写在文件名、`asset.json` 和 PNG 元数据三处。
@@ -96,6 +113,8 @@ scripts/
   character-refs.mjs  config / intake-check / new / gen / confirm / check / render
   core.mjs                  视图、提示词、输入校验、版本与过期、检查门
   models.mjs                四个出图适配器
+  looks.mjs                 画风预设表（写实、动漫）
+  i18n.mjs                  报告与确认表的界面文案（中英日）
   png.mjs                   PNG 读写与元数据（零依赖）
   selftest.mjs              自测，不调模型
 references/
@@ -114,11 +133,11 @@ examples/
 node scripts/selftest.mjs
 ```
 
-171 项断言，不调模型、不花额度，Qwen 和 GPT Image 使用本地假服务器校验请求格式，完整流程使用自定义命令造的白底图跑通。
+199 项断言，不调模型、不花额度，Qwen 和 GPT Image 使用本地假服务器校验请求格式，完整流程使用自定义命令造的白底图跑通。
 
 ## 已知短板
 
-- 画风只有写实照片一种
+- 实测过的画风只有写实和动漫；动漫版 45° 大头照同样转不够（Qwen 约 20–30°）
 - 小疤痕容易画成新伤；双排扣这类大面积细节取景偏远
 - Qwen 的领口细节会把粗布画得像丝绒，这一张换 codex 重出
 - `openai` 只验过请求格式，没有使用真 key 跑过

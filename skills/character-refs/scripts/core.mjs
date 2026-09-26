@@ -4,6 +4,9 @@
 import { createHash } from 'node:crypto';
 import { decode, pngInfo, isPng, withText } from './png.mjs';
 import { BUILTIN, LANG_RE, fmt, uiFor, uiMissing } from './i18n.mjs';
+import { DEFAULT_LOOK } from './looks.mjs';
+
+export { DEFAULT_LOOK };
 
 /* ------------------------------------------------------------------ */
 /* 视图与档位                                                            */
@@ -58,20 +61,7 @@ export const viewsOfTier = (outfit, tier) => Object.entries(allViews(outfit)).fi
 /* ------------------------------------------------------------------ */
 /* 画风层（按项目存；出锚点时整份快照进 frozen）                            */
 /* ------------------------------------------------------------------ */
-// 方案四：用户确认过的写实基线。只写相机、光、介质；皮肤粗糙到什么程度是角色属性，不写在这里——
-// 统一写「泛红、小瑕疵」会把 19 岁的角色画成病容（实测）。不写 photorealistic：它会把画面往 CG 渲染带。
-const ANTI_AI = 'CGI, 3D render, digital painting, illustration, anime, airbrushed skin, smooth plastic skin, waxy skin, doll face, ' +
-  'beauty filter, overly symmetrical face, oversharpened, HDR, glossy, over-saturated';
-export const DEFAULT_LOOK = {
-  id: 'realistic-photo',
-  label: '写实照片（方案四）',
-  style: 'A real photograph, not a render: shot on a full-frame digital camera with an 85mm portrait lens at f/5.6, natural true-to-life ' +
-    "colors and white balance. Natural skin texture with the pores and fine lines the person's age calls for, a no-makeup look, " +
-    'no retouching, no beauty filter. Real fabric with natural creases. Subtle film grain.',
-  clean: 'White seamless paper backdrop lit to pure white. A soft directional key light from the front-left with a weaker fill, so the face ' +
-    'and clothes have gentle natural shadows and volume. Exactly one person, empty hands, no props, no text, no watermark.',
-  neg: ANTI_AI + ', flat lighting, porcelain skin, big anime eyes',
-};
+// 预设表在 looks.mjs；这里只用默认的那一个当缺省值。
 const BASE_NEG = 'text, watermark, border, multiple people, extra limbs, deformed hands, props, scenery, colored background, oversaturated colors';
 const FACE_NEG = BASE_NEG + ', waist, torso, arms, hands, full body, legs, feet, wide shot, medium shot';
 
@@ -139,7 +129,8 @@ export function layersHash(L) {
   return sha256(JSON.stringify([L.identity.age, L.identity.gender, en(L.identity), en(L.face), en(L.hair), en(L.build), en(L.skin),
     en(L.top), en(L.bottom), en(L.backCue), L.details.map((d) => [d.slot, d.id ?? null, d.part ?? null, en(d)])])).slice(0, 16);
 }
-export const lookHash = (look) => sha256(JSON.stringify([look.style, look.clean, look.neg])).slice(0, 16);
+// medium 只在 drawn 时计入，老资产（写实、没有 medium 字段）的指纹不变
+export const lookHash = (look) => sha256(JSON.stringify([look.style, look.clean, look.neg, ...(look.medium === 'drawn' ? ['drawn'] : [])])).slice(0, 16);
 
 /* ------------------------------------------------------------------ */
 /* 提示词                                                                */
@@ -161,8 +152,10 @@ export function buildPrompt(asset, outfitId, viewId, look = DEFAULT_LOOK) {
   const who = `this same ${nounOf(L.identity.age, L.identity.gender)}`;
   const S = s[0].toUpperCase() + s.slice(1);
   const details = L.details.map((d) => en(d));
+  // 画出来的画风（动漫等）不写皮肤层：毛孔、雀斑这类照片质感会把画面往写实拽
+  const drawn = look.medium === 'drawn';
   const look_ = [sentence(en(L.identity)), sentence(en(L.face)), sentence(en(L.hair)), L.build ? sentence(en(L.build)) : '',
-    sentence(`${S} wears ${en(L.top)}; ${en(L.bottom)}`), ...details.map(sentence), sentence(en(L.skin))].filter(Boolean).join(' ');
+    sentence(`${S} wears ${en(L.top)}; ${en(L.bottom)}`), ...details.map(sentence), drawn ? '' : sentence(en(L.skin))].filter(Boolean).join(' ');
   // 一致性清单要短，并按视图取层（实测）：大头照只保留脸、头发、上装——写了下装和鞋，模型就拉远镜头去画；
   // 细节只在锚点里写一次，派生图从锚点里看得到，不再重复（列多了同样把镜头往全身带）。
   const same = (x) => `the same ${bare(en(x))}`;
@@ -206,7 +199,7 @@ export function buildPrompt(asset, outfitId, viewId, look = DEFAULT_LOOK) {
       const age = L.identity.age;
       const skin = `Any visible skin is the skin of a ${age}-year-old.`;
       const frame = {
-        hair: `Zoom in to an extreme close-up macro photo of only ${en(d)}. It fills the entire frame and ${p} face is not visible; individual hair strands and fine texture are sharp.`,
+        hair: `Zoom in to an extreme close-up ${drawn ? 'view' : 'macro photo'} of only ${en(d)}. It fills the entire frame and ${p} face is not visible; individual hair strands and fine texture are sharp.`,
         neck: `Zoom in to an extreme close-up of only ${p} neckline: ${en(d)} fill the entire frame. The frame is cropped below ${p} chin, so ${p} face is not visible. ${skin}`,
         sleeve: `Zoom in to an extreme close-up of only one sleeve cuff at the wrist: ${en(d)}. The cuff fills the entire frame; no face and no full body. ${skin}`,
         feet: `Zoom in to an extreme close-up of only ${p} feet and ankles: ${en(d)}, on a plain white floor. Only the feet and ankles are visible; no face and no upper body. ${skin}`,

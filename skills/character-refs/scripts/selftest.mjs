@@ -21,11 +21,14 @@ import {
 } from './models.mjs';
 import { renderHtml, safeName } from './character-refs.mjs';
 import { BUILTIN, UI, fmt, uiFor, uiMissing, uiTemplate } from './i18n.mjs';
+import { LOOKS, findLook, lookName, lookProblems, lookSnapshot } from './looks.mjs';
+import { lookHash } from './core.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, 'character-refs.mjs');
 const INTAKE = JSON.parse(readFileSync(join(here, '..', 'examples', '阿禾-intake.json'), 'utf8'));
 const clone = (x) => structuredClone(x);
+const A0 = () => assetFromIntake(INTAKE);
 let passed = 0;
 const ok = (c, label) => { assert.ok(c, label); passed++; };
 const eq = (a, b, label) => { assert.equal(a, b, `${label} — 期望 ${b}，实际 ${a}`); passed++; };
@@ -130,6 +133,30 @@ eq(uiFor('en', { title: 'Cast refs' }).title, 'Cast refs', '内置语言可以�
 eq(uiFor('en', { title: 'Cast refs' }).without, UI.en.without, '没覆盖的照旧');
 eq(fmt('第 {n} 档 {x}', { n: 2 }), '第 2 档 {x}', '占位符只填给了的');
 ok(uiTemplate('fr')._说明.join('').includes('占位符'), '骨架带翻译说明');
+
+/* ---------------- 画风预设 ---------------- */
+for (const [name, id] of [['写实', 'realistic-photo'], ['realistic', 'realistic-photo'], ['REALISTIC', 'realistic-photo'], ['动漫', 'anime'], ['anime', 'anime'], ['動漫', 'anime'], ['アニメ', 'anime']]) {
+  eq(findLook(name)?.id, id, `画风名「${name}」→ ${id}`);
+}
+eq(findLook('油画'), null, '没有的预设返回空');
+eq(DEFAULT_LOOK.id, 'realistic-photo', '默认写实');
+ok(LOOKS.every((l) => l.label.zh && l.label.en && l.label.ja && ['photo', 'drawn'].includes(l.medium) && lookProblems(l).length === 0), '每个预设都有中英日名字、介质，且自身合规');
+ok(!('names' in lookSnapshot(findLook('anime'))), '快照不带命令行别名');
+{
+  const legacy = { id: 'realistic-photo', label: '写实照片（方案四）', style: DEFAULT_LOOK.style, clean: DEFAULT_LOOK.clean, neg: DEFAULT_LOOK.neg };
+  eq(lookHash(legacy), lookHash(DEFAULT_LOOK), '老资产的写实快照（没有 medium）指纹不变，不会平白过期');
+  eq(lookName(legacy, 'en'), '写实照片（方案四）', '老资产的字符串名字原样显示');
+}
+eq(lookName(DEFAULT_LOOK, 'en'), 'Realistic photo', '预设名字按语言取');
+eq(lookName({ label: { zh: '水墨' } }, 'fr'), '水墨', '没有这个语言就退到别的');
+ok(lookProblems({ style: 's', clean: 'grey studio', neg: 'n' }).some((x) => x.includes('white')), '自定义画风没写白底被拦');
+{
+  const a = assetFromIntake(INTAKE, lookSnapshot(findLook('anime')));
+  const anchor = buildPrompt(a, 'default', 'front-full', a.outfits.default.look).text;
+  ok(anchor.includes('anime illustration') && !anchor.includes('freckles') && !anchor.includes('A real photograph'), '动漫：写动漫画风，不写皮肤层（雀斑、毛孔会把画面往写实拽）');
+  ok(!buildPrompt(a, 'default', 'detail-hair', a.outfits.default.look).text.includes('macro photo'), '动漫：细节图不写 photo');
+  ok(buildPrompt(A0(), 'default', 'front-full').text.includes('freckles') && buildPrompt(A0(), 'default', 'detail-hair').text.includes('macro photo'), '写实：照旧写皮肤层与 macro photo');
+}
 
 /* ---------------- 视图、档位、提示词 ---------------- */
 const A = assetFromIntake(INTAKE);
@@ -358,6 +385,22 @@ const serve = (handler) => new Promise((ok_) => {
   ok(run('render', assetPath, '--lang', 'fr', '--out', outEn).status !== 0, '非内置语言没给 ui：render 报错，不出半中半英的报告');
   ok(run('render', assetPath, '--lang', 'fr', '--ui', uiFile, '--out', outEn).status === 0 && readFileSync(outEn, 'utf8').includes('Références de personnage'), 'render --ui 传自译文案');
   ok(JSON.parse(run('ui-template', 'fr').stdout).htmlLang === 'fr', 'ui-template 打印骨架');
+  const lk = run('looks').stdout;
+  ok(lk.includes('动漫') && lk.includes('Anime') && lk.includes('* 写实照片'), 'looks 列出预设，标出默认');
+  const lookFile = join(TMP, 'my-look.json');
+  const tpl = JSON.parse(run('look-template', '动漫').stdout);
+  ok(tpl.medium === 'drawn' && tpl.id === 'custom', 'look-template 以预设为底打印可改的骨架');
+  writeFileSync(lookFile, JSON.stringify({ ...tpl, style: tpl.style + ' Muted colors.' }));
+  const out2 = join(TMP, 'b');
+  ok(run('new', join(here, '..', 'examples', '阿禾-intake.json'), '--out', out2, '--look', '动漫').status === 0, 'new --look 动漫');
+  eq(JSON.parse(readFileSync(join(out2, safeName('阿禾'), 'asset.json'), 'utf8')).outfits.default.look.id, 'anime', '资产里是动漫快照');
+  ok(run('new', join(here, '..', 'examples', '阿禾-intake.json'), '--out', join(TMP, 'c'), '--look', lookFile).status === 0, 'new --look 自定义文件');
+  ok(run('new', join(here, '..', 'examples', '阿禾-intake.json'), '--out', join(TMP, 'd'), '--look', '油画').stderr.includes('可用预设'), '没有的画风名：报错并列出可用预设');
+  const rs = run('restyle', assetPath, '--look', 'anime');
+  ok(rs.status === 0 && rs.stdout.includes('写实照片 → 动漫'), 'restyle 换画风');
+  const ck3 = run('check', assetPath);
+  ok(ck3.status === 1 && ck3.stdout.includes('正面全身（锚点）') && ck3.stdout.includes('画风快照变了'), '换画风后连锚点一起过期');
+  ok(run('render', assetPath, '--lang', 'en', '--out', outEn).status === 0 && readFileSync(outEn, 'utf8').includes('Style: Anime'), '报告里的画风名随语言');
   const legacy = assetFromIntake(INTAKE);
   delete legacy.lang;
   ok(renderHtml([{ asset: legacy, assetDir: TMP }], TMP).includes('<html lang="zh-CN">'), '旧资产没有 lang：按中文出');

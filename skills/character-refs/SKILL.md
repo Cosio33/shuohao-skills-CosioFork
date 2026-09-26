@@ -41,7 +41,7 @@ metadata:
 `{baseDir}` = 本文件所在目录。脚本 `{baseDir}/scripts/character-refs.mjs`，零依赖，`node` 直接跑。
 
 **这是仓库里唯一真出图的 skill。**其余 skill 只交提示词，因为出图那一刻才能决定模型和画风；
-这个 skill 就是「那一刻」——模型在 Step 0 由用户选定，画风是写实照片。
+这个 skill 就是「那一刻」——模型在 Step 0 由用户选定，画风在建角色时选择（默认写实，另有动漫预设，也能挂自定义画风）。
 
 ### 核心规则（先读懂再动手）
 
@@ -119,10 +119,29 @@ node {baseDir}/scripts/character-refs.mjs intake-check <intake.json>
 ### Step 2 — 建资产
 
 ```bash
-node {baseDir}/scripts/character-refs.mjs new <intake.json> --out <输出目录>
+node {baseDir}/scripts/character-refs.mjs new <intake.json> --out <输出目录> [--look 画风]
 ```
 
-建出 `<输出目录>/<角色名>/asset.json`。画风层（写实照片）此时整份快照进资产，之后改全局画风不影响已有角色。
+建出 `<输出目录>/<角色名>/asset.json`。画风层此时整份快照进资产，之后改预设不影响已有角色。
+
+**画风**：用户说了就按用户说的选择，没说就是写实。同一部剧的角色**全部使用同一个画风**。
+
+| 预设 | `--look` 认的名字 |
+| --- | --- |
+| 写实照片（默认） | `写实` `realistic` `photo` `真人` |
+| 动漫 | `动漫` `anime` `二次元` `アニメ` |
+
+`looks` 列出全部预设。用户要别的画风（国风、美漫……）：`look-template <最接近的预设> > my-look.json`，改 `style`（介质、线条）、
+`clean`（背景与光，**必须保留白底**）、`neg`（反向词——换成画出来的画风要把 `anime` `illustration` 从反向词里拿掉），
+画出来的画风把 `medium` 写成 `drawn`，然后 `--look my-look.json`。自定义画风没有实测，先出锚点看效果。
+
+已经建好的角色要换画风：
+
+```bash
+node {baseDir}/scripts/character-refs.mjs restyle <asset.json> --look 动漫
+```
+
+换完所有已有的图（连锚点）都标过期，旧图保留，从锚点开始重出。
 
 ### Step 3 — 出锚点
 
@@ -199,7 +218,7 @@ node {baseDir}/scripts/character-refs.mjs render <asset.json>... --out <输出�
 
 ## 边界
 
-- 画风只有写实照片一种（`look-template` 可以看到，`new --look` 可以换，但别的画风没有实测）
+- 实测过的画风只有写实和动漫两种（都是 Qwen 跑四档）；自定义画风效果取决于写法，先出锚点看
 - 细节图只收长在角色身上的（发饰、领口、袖口、鞋）；道具归 novel-art
 - 已知短板：小疤痕容易画成新伤、双排扣这类大面积细节取景偏远、Qwen 的领口细节会把粗布画得像丝绒（换 codex 重出这一张）、Qwen 细节图里露出的皮肤会偏老（提示词已加年龄句，16 岁样例上有效，未大量验证）
 - `openai` 适配器只使用本地假服务器验过请求格式，**没有用真 key 跑过**；第一次使用时先出一张锚点看看
@@ -211,7 +230,7 @@ node {baseDir}/scripts/character-refs.mjs render <asset.json>... --out <输出�
 node {baseDir}/scripts/selftest.mjs
 ```
 
-171 项断言，不调模型、不花额度：PNG 标识读写、检查门、输入校验、多语言确认表与报告、提示词、过期传导、出图适配器的请求格式（Qwen 与 GPT Image 使用本地假服务器）、
+199 项断言，不调模型、不花额度：PNG 标识读写、检查门、输入校验、多语言确认表与报告、画风预设与换画风、提示词、过期传导、出图适配器的请求格式（Qwen 与 GPT Image 使用本地假服务器）、
 以及使用自定义命令跑通的完整流程。改完脚本先跑这个。
 
 ## 自带样例

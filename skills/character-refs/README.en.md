@@ -36,6 +36,22 @@ Four options, chosen on first use and kept after that:
 
 **The anchor and the derived images can use different models, and any single image can be regenerated with another one.** Consistency comes from sharing one anchor, not one model — Qwen anchor + GPT derivatives, GPT anchor + Qwen derivatives, and mixing both within one set all held together in testing. Each image records its model; mixing only raises a note.
 
+## Styles
+
+Two built-in presets, with Chinese and English names:
+
+```bash
+node scripts/character-refs.mjs new 阿禾-intake.json --out out/ --look anime      # or --look 动漫
+node scripts/character-refs.mjs looks                                             # list all presets
+```
+
+| Preset | Names | Tested |
+| --- | --- | --- |
+| Realistic photo (default) | `realistic` / `写实` | Qwen and GPT, several characters |
+| Anime | `anime` / `动漫` | Qwen, all four tiers passed |
+
+For your own style: `look-template anime > my-look.json`, edit it, then `--look my-look.json`. To change the style of an existing character, use `restyle`; every image becomes stale and you regenerate from the anchor. Style and character are separate layers, and style words are rejected in character descriptions — the same character under another preset is simply drawn another way.
+
 ## Labels and regeneration
 
 Every image carries a label `character/outfit/view/version` (e.g. `阿禾/default/face-front/v2`) in its filename, in `asset.json` and in the PNG metadata.
@@ -73,11 +89,11 @@ node scripts/character-refs.mjs render out/阿禾/asset.json --out out/character
 node scripts/selftest.mjs
 ```
 
-171 assertions, no model calls, no quota. The Qwen and GPT Image adapters are checked against local mock servers; the full pipeline runs end to end with a custom command that produces blank white images.
+199 assertions, no model calls, no quota. The Qwen and GPT Image adapters are checked against local mock servers; the full pipeline runs end to end with a custom command that produces blank white images.
 
 ## Known limitations
 
-- Photographic realism is the only style
+- Only the realistic and anime styles are tested; the anime 45° headshot also under-rotates (about 20–30° on Qwen)
 - Small scars tend to look like fresh wounds; large details like double-breasted buttons get framed too wide
 - Qwen renders coarse cotton in neckline details with a velvet-like sheen; regenerate that one with codex
 - The `openai` adapter has only been checked for request format, not run with a real key

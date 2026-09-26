@@ -10,9 +10,22 @@ import {
   human, intakeProblems, padDisplay, recordVersion, resolveLayers, resolveRefs, skinBand, staleCodes, staleReasons, staleText, viewsOfTier,
 } from './core.mjs';
 import { BUILTIN, fmt, uiFor, uiTemplate } from './i18n.mjs';
+import { DEFAULT_LOOK_ID, LOOKS, findLook, lookName, lookProblems, lookSnapshot } from './looks.mjs';
 import { CONFIG_PATH, configMissing, generate, loadConfig, maskConfig, modelKind, saveConfig } from './models.mjs';
 
 const readJson = (p) => JSON.parse(readFileSync(resolve(p), 'utf8'));
+
+/** --look 的值：先当预设名（写实 / realistic / 动漫 / anime …），不是预设再当 JSON 文件路径。 */
+export function resolveLookArg(arg) {
+  if (arg == null) return lookSnapshot(findLook(DEFAULT_LOOK_ID));
+  const preset = findLook(arg);
+  if (preset) return lookSnapshot(preset);
+  if (!existsSync(resolve(arg))) throw new Error(`没有叫「${arg}」的画风预设，也没有这个文件。可用预设：${LOOKS.map((l) => `${l.label.zh} / ${l.id}`).join('，')}`);
+  const look = readJson(arg);
+  const probs = lookProblems(look);
+  if (probs.length) throw new Error(`画风文件 ${arg} 有问题：\n${probs.join('\n')}`);
+  return { id: look.id ?? 'custom', ...look };
+}
 const writeJson = (p, x) => writeFileSync(resolve(p), JSON.stringify(x, null, 2) + '\n', 'utf8');
 function flag(rest, name, fallback = null) {
   const i = rest.indexOf(name);
@@ -181,7 +194,7 @@ function outfitSection(asset, oid, assetDir, outDir, ui) {
   <div class="details" style="--n:${Math.max(1, details.length)}">${details.map((v) => `<div class="cell">${img(v)}<em>${esc(label(v))}</em></div>`).join('')}</div>
 </div></div>${desc}`;
   const extra = current(outfit, 'face-45') ? `<div class="extra">${img('face-45')}<span>${esc(ui.face45Extra)}</span></div>` : '';
-  const look = ui.looks[outfit.look?.id] ?? outfit.look?.label ?? '';
+  const look = ui.looks[outfit.look?.id] ?? lookName(outfit.look, ui.htmlLang.split('-')[0]);
   const T = ui.th;
   return `<section class="set"><h2>${esc(asset.name)} · ${esc(outfit.label)}<span>${esc(fmt(ui.tierN, { n: tierNow }))} · ${esc(conf)} · ${esc(fmt(ui.look, { x: look }))}</span></h2>
 ${notes}${sheet}${extra}
@@ -267,8 +280,11 @@ const USAGE = `character-refs.mjs —— 角色参考图
          [--custom 名字=命令模板]
   intake-template                          打印一次性输入的模板（给模型填）
   intake-check <intake.json>               校验并打印确认表；有问题 exit 1
-  new <intake.json> --out <目录> [--look look.json]   建角色资产 <目录>/<角色名>/asset.json
-  look-template                            打印默认画风层（写实照片），可改后用 --look 传入
+  new <intake.json> --out <目录> [--look 画风]   建角色资产 <目录>/<角色名>/asset.json
+                                           画风：预设名（写实 / realistic / 动漫 / anime），或自定义的 look.json；默认写实
+  looks                                    列出画风预设
+  look-template [预设]                     打印一个预设的画风层，改完存成文件用 --look 传入
+  restyle <asset.json> --look 画风 [--outfit id]   给已有角色换画风；已有的图全部标过期
   prompt <asset.json> <视图> [--outfit id]  打印这张图的提示词、反向词、比例、参考图
   gen <asset.json> (<视图>... | --tier N)  出图；已有的视图再出一次就是新版本（重出）
       [--outfit id] [--model m] [--seed n] [--reason 文字] [--no-confirm]
@@ -327,7 +343,34 @@ async function main(argv) {
     console.log(JSON.stringify(uiTemplate(lang), null, 2));
     return;
   }
-  if (cmd === 'look-template') { console.log(JSON.stringify(DEFAULT_LOOK, null, 2)); return; }
+  if (cmd === 'looks') {
+    for (const l of LOOKS) console.log(`${l.id === DEFAULT_LOOK_ID ? '*' : ' '} ${padDisplay(l.label.zh, 10)} ${padDisplay(l.label.en, 18)} --look ${l.names.join(' | ')}`);
+    console.log('\n* 为默认。自定义：look-template <预设> > my.json，修改后 --look my.json');
+    return;
+  }
+  if (cmd === 'look-template') {
+    const [name] = posArgs(rest);
+    const preset = findLook(name ?? DEFAULT_LOOK_ID);
+    if (!preset) throw new Error(`没有叫「${name}」的画风预设（looks 查看全部）`);
+    console.log(JSON.stringify({ ...lookSnapshot(preset), id: 'custom', label: { zh: '我的画风', en: 'My style' } }, null, 2));
+    return;
+  }
+  if (cmd === 'restyle') {
+    const [p] = posArgs(rest);
+    const lookArg = flag(rest, '--look');
+    if (!p || !lookArg) throw new Error('用法：restyle <asset.json> --look <预设名或 look.json> [--outfit id]');
+    const asset = readJson(p);
+    const oid = flag(rest, '--outfit', 'default');
+    const outfit = asset.outfits[oid];
+    if (!outfit) throw new Error(`没有造型 ${oid}`);
+    const before = lookName(outfit.look);
+    outfit.look = resolveLookArg(lookArg);
+    writeJson(p, asset);
+    const n = Object.keys(outfit.views ?? {}).length;
+    console.log(`✓ ${asset.name} · ${oid}：画风 ${before} → ${lookName(outfit.look)}` +
+      (n ? `\n  已有的 ${n} 个视图全部标成过期（旧图保留）。从锚点开始重出：gen ${p} front-full` : ''));
+    return;
+  }
 
   if (cmd === 'intake-check') {
     const [p] = posArgs(rest);
@@ -346,19 +389,17 @@ async function main(argv) {
   if (cmd === 'new') {
     const [p] = posArgs(rest);
     const out = flag(rest, '--out');
-    if (!p || !out) throw new Error('用法：new <intake.json> --out <目录> [--look look.json]');
+    if (!p || !out) throw new Error('用法：new <intake.json> --out <目录> [--look 预设名或 look.json]');
     const x = readJson(p);
     const probs = intakeProblems(x);
     if (probs.length) throw new Error(`输入没过校验，先跑 intake-check：\n${probs.join('\n')}`);
-    const lookPath = flag(rest, '--look');
-    const look = lookPath ? readJson(lookPath) : DEFAULT_LOOK;
-    for (const k of ['style', 'clean', 'neg']) if (!String(look[k] ?? '').trim()) throw new Error(`画风层缺 ${k}`);
+    const look = resolveLookArg(flag(rest, '--look'));
     const dir = join(resolve(out), safeName(x.name));
     const path = join(dir, 'asset.json');
     if (existsSync(path)) throw new Error(`${path} 已存在——改描述请直接编辑它（照旧描述出的图会自动标过期），或换个目录`);
     mkdirSync(dir, { recursive: true });
     writeJson(path, assetFromIntake(x, look));
-    console.log(`✓ ${path}\n  下一步：gen ${path} --tier 1`);
+    console.log(`✓ ${path}（画风：${lookName(look)}）\n  下一步：gen ${path} --tier 1`);
     return;
   }
 
