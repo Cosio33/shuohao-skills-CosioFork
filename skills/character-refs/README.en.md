@@ -41,14 +41,14 @@ Four options, chosen on first use and kept after that:
 Two built-in presets, with Chinese and English names:
 
 ```bash
-node scripts/character-refs.mjs new 阿禾-intake.json --out out/ --look anime      # or --look 动漫
+node scripts/character-refs.mjs new 阿禾-intake.json --out out/                  # anime by default; --look realistic for photos
 node scripts/character-refs.mjs looks                                             # list all presets
 ```
 
 | Preset | Names | Tested |
 | --- | --- | --- |
-| Realistic photo (default) | `realistic` / `写实` | Qwen and GPT, several characters |
-| Anime | `anime` / `动漫` | Qwen, all four tiers passed |
+| Anime (default) | `anime` / `cartoon` / `动漫` | Qwen, all four tiers passed |
+| Realistic photo | `realistic` / `写实` | Qwen and GPT, several characters |
 
 For your own style: `look-template anime > my-look.json`, edit it, then `--look my-look.json`. To change the style of an existing character, use `restyle`; every image becomes stale and you regenerate from the anchor. Style and character are separate layers, and style words are rejected in character descriptions — the same character under another preset is simply drawn another way.
 
@@ -68,7 +68,7 @@ Checked in code; `check` exits 1 on failure: side length 300–5760 px, aspect r
 
 ## Report
 
-`render` writes a self-contained HTML page: a single card at tier 1, a character-sheet layout from tier 2 (headshot on the left, front / profile / back top right, detail strip bottom right), details hidden by default with a one-click toggle, plus a screenshot mode that leaves a single 16:9 sheet ready to capture. The layout is done in code rather than generated as one composite image — a composite used as a reference makes models draw the person smaller. The report UI ships in Chinese, English and Japanese (`render --lang en`); for any other language the agent translates the UI strings on the spot. Character descriptions stay as written, and image prompts are always English.
+`render` writes a self-contained HTML page: a single card at tier 1, a character-sheet layout from tier 2 (headshot on the left, front / profile / back top right, detail strip bottom right), details hidden by default with a one-click toggle. Stale images get a red outline, explained by a legend at the top; hover over one to see why. The layout is done in code rather than generated as one composite image — a composite used as a reference makes models draw the person smaller. The report UI ships in Chinese, English and Japanese (`render --lang en`); for any other language the agent translates the UI strings on the spot. Character descriptions stay as written, and image prompts are always English.
 
 ## Command line
 
@@ -90,7 +90,7 @@ node scripts/character-refs.mjs render out/阿禾/asset.json --out out/character
 node scripts/selftest.mjs
 ```
 
-220 assertions, no model calls, no quota. The Qwen and GPT Image adapters are checked against local mock servers; the full pipeline runs end to end with a custom command that produces blank white images.
+222 assertions, no model calls, no quota. The Qwen and GPT Image adapters are checked against local mock servers; the full pipeline runs end to end with a custom command that produces blank white images.
 
 ## Known limitations
 

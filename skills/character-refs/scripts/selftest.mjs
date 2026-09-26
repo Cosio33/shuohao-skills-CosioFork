@@ -28,7 +28,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, 'character-refs.mjs');
 const INTAKE = JSON.parse(readFileSync(join(here, '..', 'examples', '阿禾-intake.json'), 'utf8'));
 const clone = (x) => structuredClone(x);
-const A0 = () => assetFromIntake(INTAKE);
+const REAL = lookSnapshot(findLook('写实'));
+const A0 = () => assetFromIntake(INTAKE, REAL);
 let passed = 0;
 const ok = (c, label) => { assert.ok(c, label); passed++; };
 const eq = (a, b, label) => { assert.equal(a, b, `${label} — 期望 ${b}，实际 ${a}`); passed++; };
@@ -152,15 +153,17 @@ for (const [name, id] of [['写实', 'realistic-photo'], ['realistic', 'realisti
   eq(findLook(name)?.id, id, `画风名「${name}」→ ${id}`);
 }
 eq(findLook('油画'), null, '没有的预设返回空');
-eq(DEFAULT_LOOK.id, 'realistic-photo', '默认写实');
+eq(DEFAULT_LOOK.id, 'anime', '默认动漫');
+eq(findLook('卡通')?.id, 'anime', '「卡通」也是动漫');
+eq(assetFromIntake(INTAKE).outfits.default.look.id, 'anime', '不指定画风：建资产用动漫');
 ok(LOOKS.every((l) => l.label.zh && l.label.en && l.label.ja && ['photo', 'drawn'].includes(l.medium) && lookProblems(l).length === 0), '每个预设都有中英日名字、介质，且自身合规');
 ok(!('names' in lookSnapshot(findLook('anime'))), '快照不带命令行别名');
 {
-  const legacy = { id: 'realistic-photo', label: '写实照片（方案四）', style: DEFAULT_LOOK.style, clean: DEFAULT_LOOK.clean, neg: DEFAULT_LOOK.neg };
-  eq(lookHash(legacy), lookHash(DEFAULT_LOOK), '老资产的写实快照（没有 medium）指纹不变，不会平白过期');
+  const legacy = { id: 'realistic-photo', label: '写实照片（方案四）', style: REAL.style, clean: REAL.clean, neg: REAL.neg };
+  eq(lookHash(legacy), lookHash(REAL), '老资产的写实快照（没有 medium）指纹不变，不会平白过期');
   eq(lookName(legacy, 'en'), '写实照片（方案四）', '老资产的字符串名字原样显示');
 }
-eq(lookName(DEFAULT_LOOK, 'en'), 'Realistic photo', '预设名字按语言取');
+eq(lookName(REAL, 'en'), 'Realistic photo', '预设名字按语言取');
 eq(lookName({ label: { zh: '水墨' } }, 'fr'), '水墨', '没有这个语言就退到别的');
 ok(lookProblems({ style: 's', clean: 'grey studio', neg: 'n' }).some((x) => x.includes('white')), '自定义画风没写白底被拦');
 {
@@ -172,20 +175,20 @@ ok(lookProblems({ style: 's', clean: 'grey studio', neg: 'n' }).some((x) => x.in
 }
 
 /* ---------------- 视图、档位、提示词 ---------------- */
-const A = assetFromIntake(INTAKE);
+const A = assetFromIntake(INTAKE, REAL);   // 提示词的写法以写实为基线测；动漫的差异在画风预设一节
 const O = 'default';
 eq(viewsOfTier(A.outfits[O], 1).join(), 'front-full', '第一档只有锚点');
 eq(viewsOfTier(A.outfits[O], 2).join(), 'face-front,side-full,back-full', '第二档：大头照、90° 侧面、背面');
 eq(viewsOfTier(A.outfits[O], 3).join(), 'detail-hair,detail-neck,detail-sleeve,detail-feet', '第三档：四个默认细节');
 eq(viewsOfTier(A.outfits[O], 4).join(), 'face-45', '45° 大头照在最后一档');
-eq(A.outfits[O].look.style, DEFAULT_LOOK.style, '建资产时把画风层整份快照进造型');
+eq(A.outfits[O].look.style, REAL.style, '建资产时把画风层整份快照进造型');
 {
   const x = assetFromIntake({ ...clone(INTAKE), outfit: { ...clone(INTAKE.outfit), details: [] } });
   eq(viewsOfTier(x.outfits[O], 3).length, 0, '没写细节就没有第三档');
 }
-const P = (v) => buildPrompt(A, O, v);
+const P = (v) => buildPrompt(A, O, v, REAL);
 ok(P('front-full').text.startsWith('Full-body front view: she stands straight and faces the camera squarely'), '锚点：正面全身，代词按性别');
-ok(P('front-full').text.includes(DEFAULT_LOOK.style) && P('front-full').text.includes(DEFAULT_LOOK.clean), '锚点带画风层');
+ok(P('front-full').text.includes(REAL.style) && P('front-full').text.includes(REAL.clean), '锚点带画风层');
 eq(P('front-full').refs.length, 0, '锚点纯文生图，不挂参考');
 ok(P('face-front').text.startsWith('Zoom in to an extreme close-up head-and-shoulders portrait, passport-photo framing'), '大头照第一句要求拉近——改图模型只听第一句');
 ok(P('face-front').text.includes('chin sits at the vertical middle'), '大头照写可量化的取景');
@@ -390,6 +393,8 @@ const serve = (handler) => new Promise((ok_) => {
   ok(html.includes("setL(s||'without')") && html.includes('无细节图'), '报告默认不显示细节图，可切换');
   ok(html.includes('src="阿禾/default/front-full.v1.png"'), '图片路径相对报告位置');
   ok(html.includes('class="img stale"'), '过期的图在报告里标红框');
+  ok(html.includes('<p class="legend">') && html.includes('红框 = 已过期'), '有过期的图时显示图例，说明红框是什么');
+  ok(/class="img stale"[^>]*title="已过期：参考图 face-front 已换成 v2"/.test(html), '鼠标移到红框图上能看到过期原因');
   ok(html.includes('角色描述（确认表）') && html.includes('推断'), '报告里带确认表与来源');
   ok(!/<link\s|<script\s+src=/.test(html), '报告零外部依赖');
   {
@@ -398,9 +403,6 @@ const serve = (handler) => new Promise((ok_) => {
     for (const v of [ANCHOR, 'face-front', 'face-45']) recordVersion(a, 'default', v, { buf: png, model: 'qwen', prompt: buildPrompt(a, 'default', v), refs: [] });
     const h = renderHtml([{ asset: a, assetDir: TMP }], TMP);
     ok(/<details class="views">(?:(?!<\/details>)[\s\S])*<div class="extra">/.test(h), '45° 大头照收在「全部视图」里，展开才显示');
-    ok(h.includes('class="shotbtn"') && h.includes('截图模式（16:9）') && h.includes('<div class="cap"><b>阿禾</b>'), '截图模式：有切换按钮、有角色名牌');
-    ok(h.includes('id="to-white"') && h.includes('min(100vw,177.78vh)'), '截图模式：浅灰底推成纯白，版面取能放下的最大 16:9');
-    ok(/location\.hash[\s\S]*details=\(\[01\]\)/.test(h), '链接 #shot&details=1 直接进截图模式（无头浏览器导出用）');
   }
   ok(html.includes('<html lang="zh-CN">') && !html.includes('Without details'), '中文资产默认出中文报告');
   const outEn = join(TMP, 'report-en.html');
@@ -408,7 +410,7 @@ const serve = (handler) => new Promise((ok_) => {
   const en = readFileSync(outEn, 'utf8');
   ok(en.includes('<html lang="en">') && en.includes('Without details') && en.includes('Front headshot') && en.includes('All views'), '英文报告：界面全换');
   ok(en.includes('reference face-front is now v2') && en.includes('Stale'), '英文报告：过期原因也翻译');
-  ok(en.includes('Character description (confirmation table)') && en.includes('inferred') && en.includes('Style: Realistic photo'), '英文报告：确认表标签、来源、画风名');
+  ok(en.includes('Character description (confirmation table)') && en.includes('inferred') && en.includes('Style: Anime'), '英文报告：确认表标签、来源、画风名（默认动漫）');
   ok(!/无细节图|全部视图|已过期|角色描述|未生成|锚点已确认/.test(en), '英文报告里没有残留的中文界面文案');
   ok(en.includes('十六岁采茶姑娘'), '数据内容保持原文（角色描述是中文写的就还是中文）');
   const uiFile = join(TMP, 'ui-fr.json');
@@ -432,7 +434,7 @@ const serve = (handler) => new Promise((ok_) => {
     ok(['front-full', 'face-front', 'side-full', 'back-full'].every((v) => g3.stdout.includes(`${v}/v1`)), '--no-confirm：一条命令出齐第二档');
   }
   const lk = run('looks').stdout;
-  ok(lk.includes('动漫') && lk.includes('Anime') && lk.includes('* 写实照片'), 'looks 列出预设，标出默认');
+  ok(lk.includes('写实照片') && lk.includes('Anime') && lk.includes('* 动漫') && lk.includes('卡通'), 'looks 列出预设，标出默认（动漫）');
   const lookFile = join(TMP, 'my-look.json');
   const tpl = JSON.parse(run('look-template', '动漫').stdout);
   ok(tpl.medium === 'drawn' && tpl.id === 'custom', 'look-template 以预设为底打印可改的骨架');
@@ -442,11 +444,11 @@ const serve = (handler) => new Promise((ok_) => {
   eq(JSON.parse(readFileSync(join(out2, safeName('阿禾'), 'asset.json'), 'utf8')).outfits.default.look.id, 'anime', '资产里是动漫快照');
   ok(run('new', join(here, '..', 'examples', '阿禾-intake.json'), '--out', join(TMP, 'c'), '--look', lookFile).status === 0, 'new --look 自定义文件');
   ok(run('new', join(here, '..', 'examples', '阿禾-intake.json'), '--out', join(TMP, 'd'), '--look', '油画').stderr.includes('可用预设'), '没有的画风名：报错并列出可用预设');
-  const rs = run('restyle', assetPath, '--look', 'anime');
-  ok(rs.status === 0 && rs.stdout.includes('写实照片 → 动漫'), 'restyle 换画风');
+  const rs = run('restyle', assetPath, '--look', '写实');
+  ok(rs.status === 0 && rs.stdout.includes('动漫 → 写实照片'), 'restyle 换画风');
   const ck3 = run('check', assetPath);
   ok(ck3.status === 1 && ck3.stdout.includes('正面全身（锚点）') && ck3.stdout.includes('画风快照变了'), '换画风后连锚点一起过期');
-  ok(run('render', assetPath, '--lang', 'en', '--out', outEn).status === 0 && readFileSync(outEn, 'utf8').includes('Style: Anime'), '报告里的画风名随语言');
+  ok(run('render', assetPath, '--lang', 'en', '--out', outEn).status === 0 && readFileSync(outEn, 'utf8').includes('Style: Realistic photo'), '报告里的画风名随语言');
   const legacy = assetFromIntake(INTAKE);
   delete legacy.lang;
   ok(renderHtml([{ asset: legacy, assetDir: TMP }], TMP).includes('<html lang="zh-CN">'), '旧资产没有 lang：按中文出');
@@ -454,6 +456,7 @@ const serve = (handler) => new Promise((ok_) => {
   eq(enAsset.lang, 'en', '资产记下语言');
   ok(renderHtml([{ asset: enAsset, assetDir: TMP }], TMP).includes('No anchor yet'), '资产 lang 为 en：不传 --lang 也出英文');
   const one = renderHtml([{ asset: assetFromIntake(INTAKE), assetDir: TMP }], TMP);
+  ok(!one.includes('<p class="legend">'), '没有过期的图就不显示图例');
   ok(one.includes('还没有锚点') && one.includes('第 0 档'), '一张图都没有时也能渲染');
 }
 

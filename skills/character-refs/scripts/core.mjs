@@ -160,8 +160,9 @@ export const lookHash = (look) => sha256(JSON.stringify([look.style, look.clean,
  *  - 细节图第一句 “Zoom in to an extreme close-up of only …”，一致性只写一句，**不列整套服装**——
  *    列了整套，模型就把整个人画出来（第一轮细节图 8/8 失败的原因）。
  */
-export function buildPrompt(asset, outfitId, viewId, look = DEFAULT_LOOK) {
+export function buildPrompt(asset, outfitId, viewId, lookArg = null) {
   const outfit = asset.outfits[outfitId];
+  const look = lookArg ?? outfit.look ?? DEFAULT_LOOK;   // 不传就用这个造型自己的画风快照
   const L = resolveLayers(asset, outfitId);
   const v = allViews(outfit)[viewId];
   if (!v) throw new Error(`没有视图 ${viewId}（可用：${Object.keys(allViews(outfit)).join(' / ')}）`);

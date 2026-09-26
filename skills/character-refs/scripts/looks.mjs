@@ -29,7 +29,7 @@ const REALISTIC = {
 // 动漫：日式电视动画的角色设定稿质感。不写 model sheet / turnaround——写了模型会在一张图里画多个视图。
 const ANIME = {
   id: 'anime',
-  names: ['anime', '动漫', '動漫', '二次元', 'アニメ'],
+  names: ['anime', 'cartoon', '动漫', '卡通', '動漫', '二次元', 'アニメ'],
   label: { zh: '动漫', en: 'Anime', ja: 'アニメ' },
   medium: 'drawn',
   style: 'A clean 2D Japanese anime illustration, like official character art for a TV anime: crisp confident line art of even weight, ' +
@@ -42,7 +42,8 @@ const ANIME = {
 };
 
 export const LOOKS = [REALISTIC, ANIME];
-export const DEFAULT_LOOK_ID = 'realistic-photo';
+// 默认动漫（用户 2026-09-26 定）；写实用 --look 写实
+export const DEFAULT_LOOK_ID = 'anime';
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 

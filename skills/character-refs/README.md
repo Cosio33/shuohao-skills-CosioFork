@@ -48,14 +48,14 @@ Qwen 锚点 + GPT 派生、GPT 锚点 + Qwen 派生、同一组里混用，实�
 内置两个预设，名字中英文都认：
 
 ```bash
-node scripts/character-refs.mjs new 阿禾-intake.json --out out/ --look 动漫      # 或 --look anime
+node scripts/character-refs.mjs new 阿禾-intake.json --out out/                 # 默认动漫；写实用 --look 写实
 node scripts/character-refs.mjs looks                                            # 列出全部预设
 ```
 
 | 预设 | 名字 | 实测 |
 | --- | --- | --- |
-| 写实照片（默认） | `写实` / `realistic` | Qwen 与 GPT 多个角色 |
-| 动漫 | `动漫` / `anime` | Qwen 四档全部通过 |
+| 动漫（默认） | `动漫` / `卡通` / `anime` | Qwen 四档全部通过 |
+| 写实照片 | `写实` / `realistic` | Qwen 与 GPT 多个角色 |
 
 要自己的画风：`look-template 动漫 > my-look.json`，改完 `--look my-look.json`。已有角色换画风用 `restyle`，
 换完全组标过期、从锚点重出。画风和角色是分开的两层，角色描述里不许写画风词——同一个阿禾，换个预设就是另一种画法。
@@ -89,7 +89,7 @@ node scripts/character-refs.mjs gen 阿禾/asset.json detail-neck --model codex 
 ## 报告
 
 `render` 出一张双击就能开的 HTML：一档只有一张卡片；二档起是设定图版面（左大头照，右上正面 / 侧面 / 背面，右下细节条），
-默认不显示细节图，页面上一键切换。「截图模式」只留一张 16:9 设定图，直接截图就能用。界面内置中文、英文、日文（`render --lang en`），其他语言由 agent 现场翻一份文案；
+默认不显示细节图，页面上一键切换。过期的图标红框，页面顶部有图例，鼠标移上去能看到原因。界面内置中文、英文、日文（`render --lang en`），其他语言由 agent 现场翻一份文案；
 角色描述保持原文，提示词永远英文。版面由代码排，不生成拼接大图——拼接图当参考图，模型会把人画小。
 
 ## 命令行直接使用
@@ -134,7 +134,7 @@ examples/
 node scripts/selftest.mjs
 ```
 
-220 项断言，不调模型、不花额度，Qwen 和 GPT Image 使用本地假服务器校验请求格式，完整流程使用自定义命令造的白底图跑通。
+222 项断言，不调模型、不花额度，Qwen 和 GPT Image 使用本地假服务器校验请求格式，完整流程使用自定义命令造的白底图跑通。
 
 ## 已知短板
 

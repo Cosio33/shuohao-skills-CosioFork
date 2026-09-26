@@ -159,8 +159,8 @@ function outfitSection(asset, oid, assetDir, outDir, ui) {
   };
   const img = (view, cls = 'img') => {
     const s = src(view);
-    const stale = s && staleCodes(asset, oid, view).length;
-    return s ? `<img class="${cls}${stale ? ' stale' : ''}" src="${esc(s)}" alt="${esc(label(view))}" loading="lazy">`
+    const why = s ? staleCodes(asset, oid, view).map((c) => staleText(c, ui)) : [];
+    return s ? `<img class="${cls}${why.length ? ' stale' : ''}" src="${esc(s)}" alt="${esc(label(view))}"${why.length ? ` title="${esc(`${ui.stStale}：${why.join('; ')}`)}"` : ''} loading="lazy">`
       : `<div class="${cls} miss">${esc(fmt(ui.notGenerated, { n: V[view]?.tier ?? '?' }))}</div>`;
   };
   const anchor = current(outfit, ANCHOR);
@@ -193,11 +193,9 @@ function outfitSection(asset, oid, assetDir, outDir, ui) {
   ].join('');
   const details = viewsOfTier(outfit, 3);
   const look = ui.looks[outfit.look?.id] ?? lookName(outfit.look, ui.htmlLang.split('-')[0]);
-  // 截图模式压在大头照左下角的名牌：角色名 + 造型 · 画风
-  const cap = `<div class="cap"><b>${esc(asset.name)}</b><span>${esc(outfit.label)} · ${esc(look)}</span></div>`;
   const sheet = tierNow <= 1
     ? `<div class="card1">${img(ANCHOR)}<div class="card1-info"><b>${esc(ui.tier1Only)}</b><p>${esc(conf)}</p>${desc}</div></div>`
-    : `<div class="sheet"><div class="bust">${img('face-front')}${cap}</div><div class="right">
+    : `<div class="sheet"><div class="bust">${img('face-front')}</div><div class="right">
   <div class="turn">${['front-full', 'side-full', 'back-full'].map((v) => `<div class="full">${img(v)}<em>${esc(label(v))}</em></div>`).join('')}</div>
   <div class="details" style="--n:${Math.max(1, details.length)}">${details.map((v) => `<div class="cell">${img(v)}<em>${esc(label(v))}</em></div>`).join('')}</div>
 </div></div>${desc}`;
@@ -220,6 +218,8 @@ export function reportUi(items, { lang = null, ui = null } = {}) {
 
 export function renderHtml(items, outDir, opts = {}) {
   const ui = reportUi(items, opts);
+  // 有过期的图才显示图例：红框就是「过期」的标记
+  const anyStale = items.some(({ asset }) => Object.entries(asset.outfits).some(([oid, o]) => Object.keys(allViews(o)).some((v) => staleCodes(asset, oid, v).length)));
   const body = items.map(({ asset, assetDir }) => Object.keys(asset.outfits).map((oid) => outfitSection(asset, oid, assetDir, outDir, ui)).join('\n')).join('\n');
   return `<!doctype html><html lang="${esc(ui.htmlLang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(ui.title)}</title><style>
@@ -229,10 +229,7 @@ export function renderHtml(items, outDir, opts = {}) {
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 system-ui,-apple-system,"PingFang SC","Hiragino Sans","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif}
 main{max-width:1400px;margin:0 auto;padding:24px 16px 56px}
 h1{font-size:20px;margin:0 0 4px}.lead{color:var(--ink2);margin:0 0 16px}
-.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 24px}
-.seg{display:inline-flex;border:1px solid var(--rule);border-radius:4px;overflow:hidden}
-.shotbtn{font:inherit;font-size:13px;padding:6px 14px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink2);cursor:pointer}
-.bust{position:relative}.cap{display:none}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:4px;overflow:hidden;margin:0 0 24px}
 .seg button{font:inherit;font-size:13px;padding:6px 14px;border:0;background:var(--card);color:var(--ink2);cursor:pointer}
 .seg button.on{background:var(--ink);color:var(--bg)}.seg button:focus-visible{outline:2px solid var(--ok);outline-offset:-2px}
 .set{margin:0 0 44px}.set h2{font-size:16px;margin:0 0 10px;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}.set h2 span{font-size:12px;font-weight:400;color:var(--ink2)}
@@ -249,6 +246,7 @@ body:not(.with) .sheet{aspect-ratio:16/5.94}body:not(.with) .right{grid-template
 .full em,.cell em{position:absolute;top:3px;left:6px;font:500 11px/1 system-ui,"PingFang SC",sans-serif;font-style:normal;color:#6f767b;background:#fffd;padding:2px 4px;border-radius:2px}
 .miss{display:flex;align-items:center;justify-content:center;color:#8f969a;font-size:12px;width:100%;height:100%;min-height:80px;background:#f6f6f4;border:1px dashed #d9dbd6;border-radius:2px}
 .stale{outline:3px solid var(--bad);outline-offset:-3px}
+.legend{display:flex;gap:8px;align-items:center;color:var(--bad);font-size:12px;margin:-6px 0 16px}.legend i{flex:none;width:22px;height:14px;background:#fff;outline:3px solid var(--bad);outline-offset:-3px}
 .card1{display:grid;grid-template-columns:minmax(0,320px) 1fr;gap:20px;background:var(--card);border:1px solid var(--rule);border-radius:4px;padding:14px}
 @media(max-width:700px){.card1{grid-template-columns:1fr}}
 .card1 .img{width:100%;display:block;background:#fff;border-radius:2px}.card1-info b{font-size:14px}.card1-info p{color:var(--ink2);margin:4px 0 10px}
@@ -262,51 +260,21 @@ table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}th,td{te
 .extra{flex:none;margin-top:8px;display:flex;flex-direction:column;gap:4px;align-items:center;max-width:230px;font-size:12px;color:var(--ink2);text-align:center}
 .extra .img{height:180px;max-width:100%;object-fit:contain;border:1px solid var(--rule);border-radius:2px;background:#fff}
 @media(max-width:700px){.vbody{flex-direction:column}.extra{align-self:center}}
-/* 截图模式：每个角色一整屏，设定图是能放下的最大 16:9，界面元素全部隐藏。
-   模型出的白底其实是 247–251 的浅灰，拼在一起能看出一个个方框；to-white 滤镜只把 95% 以上的亮度推成纯白，其余颜色不动。
-   全身图按栏高铺满、裁掉左右白边，人物才够大。 */
-body.shot{background:#fff;--u:min(1vw,1.7778vh)}
-body.shot main{max-width:none;padding:0}
-body.shot h1,body.shot .lead,body.shot .set>h2,body.shot .warn,body.shot .note,body.shot .desc,body.shot .views{display:none}
-body.shot .bar{position:fixed;top:10px;right:10px;z-index:5;margin:0;opacity:0;transition:opacity .2s}body.shot .bar:hover{opacity:1}
-body.shot .set{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#fff}
-body.shot .sheet,body.shot:not(.with) .sheet{width:min(100vw,177.78vh);height:min(56.25vw,100vh);aspect-ratio:auto;border:0}
-body.shot .bust{border-right:1px solid #e3e4e0}body.shot .turn{border-bottom-color:#e3e4e0;padding:3% 2.5% 1.5%}
-body.shot .details{gap:1.4%;padding:1.4% 2.5% 2.2%}
-body.shot .full em,body.shot .cell em{font-size:calc(var(--u)*.72);padding:.3em .5em;color:#80868a}
-body.shot .stale{outline:0}
-body.shot .img{filter:url(#to-white)}
-body.shot .full .img{width:100%;height:100%;object-fit:cover;object-position:center bottom}
-body.shot .full em{left:50%;transform:translateX(-50%);top:2.5%;background:none;font-size:calc(var(--u)*.85);letter-spacing:.06em;white-space:nowrap}
-body.shot .full{padding-top:calc(var(--u)*2.6)}
-body.shot .cap{display:flex;flex-direction:column;gap:.35em;position:absolute;left:5%;bottom:4.5%;padding:.9em 1.3em;background:#ffffffe6;border-radius:3px;
-  font-size:calc(var(--u)*1);color:#1c1f22;box-shadow:0 1px 2px #0001}
-body.shot .cap b{font-size:2.3em;line-height:1.1;letter-spacing:.04em}body.shot .cap span{color:#5f666c;font-size:1.05em}
-body.shot .card1{height:min(56.25vw,100vh);width:min(100vw,177.78vh);border:0;grid-template-columns:auto;justify-items:center}
-body.shot .card1 .img{height:100%;width:auto}body.shot .card1-info{display:none}
 img.img{cursor:zoom-in}.lb{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center}.lb.on{display:flex}.lb img{max-width:94vw;max-height:94vh}
 </style></head><body><main>
 <h1>${esc(ui.title)}</h1>
 <p class="lead">${esc(ui.lead)}</p>
-<div class="bar"><div class="seg" role="group" aria-label="${esc(ui.layout)}"><button data-l="without" class="on">${esc(ui.without)}</button><button data-l="with">${esc(ui.with)}</button></div>
-<button class="shotbtn" data-on="${esc(ui.shot)}" data-off="${esc(ui.shotExit)}">${esc(ui.shot)}</button></div>
+${anyStale ? `<p class="legend"><i></i>${esc(ui.staleLegend)}</p>` : ''}
+<div class="seg" role="group" aria-label="${esc(ui.layout)}"><button data-l="without" class="on">${esc(ui.without)}</button><button data-l="with">${esc(ui.with)}</button></div>
 ${body}
 </main><div class="lb" id="lb"><img alt=""></div>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="to-white" color-interpolation-filters="sRGB"><feComponentTransfer>
-<feFuncR type="table" tableValues="0 0.025 0.05 0.075 0.1 0.125 0.15 0.175 0.2 0.225 0.25 0.275 0.3 0.325 0.35 0.375 0.4 0.425 0.45 0.475 0.5 0.525 0.55 0.575 0.6 0.625 0.65 0.675 0.7 0.725 0.75 0.775 0.8 0.825 0.85 0.875 0.9 0.925 1 1 1"/><feFuncG type="table" tableValues="0 0.025 0.05 0.075 0.1 0.125 0.15 0.175 0.2 0.225 0.25 0.275 0.3 0.325 0.35 0.375 0.4 0.425 0.45 0.475 0.5 0.525 0.55 0.575 0.6 0.625 0.65 0.675 0.7 0.725 0.75 0.775 0.8 0.825 0.85 0.875 0.9 0.925 1 1 1"/><feFuncB type="table" tableValues="0 0.025 0.05 0.075 0.1 0.125 0.15 0.175 0.2 0.225 0.25 0.275 0.3 0.325 0.35 0.375 0.4 0.425 0.45 0.475 0.5 0.525 0.55 0.575 0.6 0.625 0.65 0.675 0.7 0.725 0.75 0.775 0.8 0.825 0.85 0.875 0.9 0.925 1 1 1"/>
-</feComponentTransfer></filter></svg>
 <script>
 const K='characterRefsLayout';
 function setL(l){document.body.classList.toggle('with',l==='with');document.querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on',b.dataset.l===l));try{localStorage.setItem(K,l)}catch(e){}}
 let s=null;try{s=localStorage.getItem(K)}catch(e){}setL(s||'without');
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setL(b.dataset.l)));
 const lb=document.getElementById('lb');document.addEventListener('click',e=>{const i=e.target.closest('img.img');if(i){lb.querySelector('img').src=i.src;lb.classList.add('on')}else if(e.target.closest('#lb'))lb.classList.remove('on')});
-const sb=document.querySelector('.shotbtn');
-function setShot(on){document.body.classList.toggle('shot',on);sb.textContent=on?sb.dataset.off:sb.dataset.on;scrollTo(0,0)}
-sb.addEventListener('click',()=>setShot(!document.body.classList.contains('shot')));
-// 链接带 #shot 直接进截图模式；#shot&details=1 / details=0 指定有没有细节图（给无头浏览器导出 PNG 用）
-{const h=location.hash;if(/shot/.test(h))setShot(true);const d=h.match(/details=([01])/);if(d)setL(d[1]==='1'?'with':'without')}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(lb.classList.contains('on'))lb.classList.remove('on');else setShot(false)}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')lb.classList.remove('on')});
 </script></body></html>`;
 }
 
