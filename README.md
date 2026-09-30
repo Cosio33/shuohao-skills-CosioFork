@@ -1,4 +1,3 @@
-[![中文](https://img.shields.io/badge/%E4%B8%AD%E6%96%87-f2e3e3?style=for-the-badge&labelColor=f2e3e3&color=b07070)](README.md)
 [![English](https://img.shields.io/badge/English-f2e3e3?style=for-the-badge&labelColor=f2e3e3&color=b07070)](README.en.md)
 [![Español](https://img.shields.io/badge/Espa%C3%B1ol-8b1a1a?style=for-the-badge)](README.es.md)
 
