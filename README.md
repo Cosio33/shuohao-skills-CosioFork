@@ -1,7 +1,7 @@
 [![English](https://img.shields.io/badge/English-f2e3e3?style=for-the-badge&labelColor=f2e3e3&color=b07070)](README.en.md)
 [![Español](https://img.shields.io/badge/Espa%C3%B1ol-8b1a1a?style=for-the-badge)](README.es.md)
 
-# shuohao-skills
+# shuohao-skills-CosioFork
 
 **Colección de skills para producción de microdramas con IA** — de una novela a material listo para rodar: bíblias de personajes, esquemas de adaptación, bíblias de arte (escenarios y utilería), guiones y storyboards. Diseñados para agentes de código con IA; **funcionan tanto en Claude Code como en codex**.
 
