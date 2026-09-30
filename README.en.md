@@ -1,5 +1,6 @@
 [![中文](https://img.shields.io/badge/%E4%B8%AD%E6%96%87-f2e3e3?style=for-the-badge&labelColor=f2e3e3&color=b07070)](README.md)
 [![English](https://img.shields.io/badge/English-8b1a1a?style=for-the-badge)](README.en.md)
+[![Español](https://img.shields.io/badge/Espa%C3%B1ol-f2e3e3?style=for-the-badge&labelColor=f2e3e3&color=b07070)](README.es.md)
 [![Follow on X](https://img.shields.io/badge/Follow-%40eternityspring-b07070?style=for-the-badge&labelColor=8b1a1a&logo=x&logoColor=f2e3e3)](https://x.com/eternityspring)
 
 > 👋 **Open to work / collaboration** — I'm between jobs right now, and this repo is what I build in that spare time.
