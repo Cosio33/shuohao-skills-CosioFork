@@ -19,6 +19,8 @@
 
 **Seedance 视频提示词不存在 JSON 里**：它由程序从 `shot`、构图量化字段、`blocking`、`soundscape`、`music` 和剧本台词现拼（结构见 `references/seedance-prompt.md`），报告和 `export --protocol seedance` 都用同一个拼法。
 
+**Omni（Google Flow / gemini-omni-1.1-flash）提示词同样不存在 JSON 里**：由程序从 `shotOmni`（可选，英文镜头正文）、构图量化字段、`blocking`、`soundscape`、`music` 和剧本台词现拼，时间码 `[0-Xs]` 按分镜秒数推导（结构见 `references/omni-flash-prompt.md`）。`shotOmni` 缺省时退回 `shot`——但仅当 `shot` 是英文时；中文 `shot` + 无 `shotOmni` 的切必须有 `frame`（第 19 道门 `omni-shot`）。报告与 `export --protocol omni` 用同一个拼法。
+
 ## segment（段）
 
 | 字段 | 类型 | 说明 |
@@ -44,6 +46,7 @@
 | `props` | string[] | 画内道具（P 编号），必须 ⊆ 剧本该场道具。可省略 |
 | `frame` | string | **分镜图提示词**（中文）：这一格的主体、位置状态、动作瞬间、光线与氛围。景别中文词必须在里面；**直呼角色名**（它指的是挂上去的设定图） |
 | `shot` | string | **镜头正文**（中文）：这几秒发生什么——运镜或切换方式 → 主体动作与表情 → 位置或空间变化，写法见 `shot-writing.md`。**用通用身份，不写角色名**；不写秒数、镜头编号、图片引用、台词和 `{}` `<>` `（）`——这些由程序加。Seedance 提示词的「画面：」行就是它 |
+| `shotOmni` | string | **Omni 用的英文镜头正文**，可选：走 Google Flow 且该切只有中文 `shot` 时才需要补写（齐图路径可省，构图交给分镜图）。同样禁写时间码、镜头编号、图片引用和协议符号（`omni-shot` 门查）。写法见 `references/omni-flash-prompt.md` |
 | `lens` | string | 焦距 + 景深：`50mm 标准，中浅景深` / `85mm 长焦，极浅景深`。这六个构图字段**每镜必填**（`composition` 门） |
 | `cameraPosition` | string | 机位：对着谁 + 什么角度，`李四 + 平视正面` / `双人 + 俯视 30°` |
 | `composition` | string | 构图法：`三分法` / `中心构图` / `对角线` / `对称` |

@@ -281,6 +281,168 @@ export function seedancePrompt(seg, { scene = null, names = {}, image = null, co
 }
 
 /* ------------------------------------------------------------------ */
+/* Omni Flash（Google Flow / gemini-omni-1.1-flash）提示词：程序按官方结构拼 */
+/* ------------------------------------------------------------------ */
+/*
+ * 写法见 references/omni-flash-prompt.md。模型只写每一切的镜头正文（cut.shot），
+ * 其余全由这里拼：附件声明、段级走位、逐镜量化字段、台词引号、声景与配乐行、
+ * 编号约束。时间层用官方 timecode 语法 [a-bs]——Omni 支持自然语言计时与
+ * 时间码，切点时刻由分镜结构确定性推导。画风层（视觉风格）由调用方提交时附加。
+ * 官方口径：提示词用英文（其他语言未评估）；负向指令直接写进正文（无 negative prompt 参数）。
+ */
+
+// Omni 的运镜说法：英文、自然语言短语（CAMERA_MOVES 枚举 → Flow 措辞）
+const OMNI_CAMERA = {
+  'Static Shot': 'locked-off static camera',
+  'Push In': 'slow push in toward the subject',
+  'Pull Out': 'pull back to a wider view',
+  'Zoom In': 'optical zoom in on the subject',
+  'Zoom Out': 'optical zoom out from the subject',
+  'Pan Left': 'pan left across the scene',
+  'Pan Right': 'pan right across the scene',
+  'Truck Left': 'camera trucks left',
+  'Truck Right': 'camera trucks right',
+  'Tilt Up': 'tilt up along the subject',
+  'Tilt Down': 'tilt down along the subject',
+  'Pedestal Up': 'pedestal rise revealing the scene',
+  'Pedestal Down': 'pedestal descent',
+  'Handheld': 'handheld camera with natural micro-shake',
+  'Tracking Shot': 'steady tracking shot following the subject',
+};
+export const omniCamera = (camera) => OMNI_CAMERA[camera] ?? String(camera ?? '');
+
+/**
+ * 镜头正文里不许出现的东西：这些由程序按真实结构加，正文写了就会重复或错位。
+ * 注意：Omni 的 shot 正文是英文（官方文档只评测了英文提示词），所以这里不做中文判定；
+ * 而 Seedance 的 shot 正文仍是中文，两套规则分开走。
+ */
+export const OMNI_FORBIDDEN = [
+  [/\b\d+(?:\.\d+)?\s*(?:[-~]\s*\d+(?:\.\d+)?)?\s*(?:s\b|sec|seconds?|秒)|\d{1,2}:\d{2}|\[\d/, '时间'],
+  [/\[?Shot\s*\d|【镜头/i, '镜头编号或时间码标题'],
+  [/@?\[?图片|<Picture|\[IMAGE_REF|<IMAGE_REF|<FIRST_FRAME|<LAST_FRAME/i, '图片引用或 Omni 标记'],
+  [/["“”{}<>（）()]/, '协议符号（台词引号、声景行与约束由程序套）'],
+];
+
+export const OMNI_NO_SUBTITLES = 'No subtitles, captions or on-screen text anywhere in the video';
+export const OMNI_SINGLE_SCENE = 'One single continuous segment only, no scene changes beyond the cuts listed above';
+
+/**
+ * 附件两条路：这一段每切都有分镜图 → 首帧 + 构图参考；否则 → 设定图当形象/场景参考。
+ * Omni 的引用体系：第一张分镜图（0.00 秒）走 <FIRST_FRAME>@ImageN，其余全部按上传顺序
+ * 编 <IMAGE_REF_0>…（FIRST_FRAME 不占 REF 号）。正文里逐镜引用各自的构图参考。
+ *
+ * @param scene  expandScript 展开后的那一场（取台词原文）
+ * @param names  { scene(id), char(id), prop(id) } → 显示名
+ * @param image  (kind, rel) → src|null，判断分镜图在不在
+ * @param constraints 调用方的全局约束，逐条拼进 Constraints
+ * @returns {{ prompt: string, refs: {kind, label, file, tag?}[] }}
+ */
+export function omniPrompt(seg, { scene = null, names = {}, image = null, constraints = [] } = {}) {
+  const nm = {
+    scene: names.scene ?? ((id) => id),
+    char: names.char ?? ((id) => id),
+    prop: names.prop ?? ((id) => id),
+  };
+  const cuts = seg?.cuts ?? [];
+  const frames = cuts.map((_, ci) => (image ? image('frame', `${seg.id}/f${ci + 1}.png`) : null));
+  const allFrames = cuts.length > 0 && frames.every(Boolean);
+  const refs = [];
+  if (!allFrames) {
+    const sheet = (label) => ({ kind: 'sheet', label, file: `${slug(label)}-sheet.png` });
+    if (scene?.sceneId) refs.push(sheet(nm.scene(scene.sceneId)));
+    for (const id of new Set(cuts.flatMap((c) => c?.characters ?? []))) if (id !== 'VO') refs.push(sheet(nm.char(id)));
+    for (const id of new Set(cuts.flatMap((c) => c?.props ?? []))) refs.push(sheet(nm.prop(id)));
+  }
+  frames.forEach((src, ci) => {
+    if (!src) return;
+    refs.push({ kind: 'frame', label: `分镜图 #${ci + 1}`, file: `${seg.id}/f${ci + 1}.png` });
+  });
+
+  // 编号：上传序 1 起（Image N）；FIRST_FRAME（第 1 张分镜图且齐图时）不占 REF 号，
+  // 其余附件按上传顺序拿 <IMAGE_REF_0..k>
+  let refN = 0;
+  const firstFrameUpload = allFrames ? refs.findIndex((r) => r.kind === 'frame') + 1 : -1;
+  refs.forEach((r, i) => {
+    if (i + 1 === firstFrameUpload) return;
+    r.tag = `<IMAGE_REF_${refN}>`;
+    refN += 1;
+  });
+  // 每切的构图参考 tag（只有齐图路径下分镜图才存在）
+  const frameTag = new Map();
+  if (allFrames) {
+    cuts.forEach((_, ci) => {
+      const r = refs[refs.findIndex((x) => x.kind === 'frame') + ci];
+      if (r) frameTag.set(ci, r.tag ?? null); // 首帧为 null（它是 FIRST_FRAME，不是 REF）
+    });
+  }
+
+  const starts = cutStarts(cuts);
+  const total = r1(cuts.reduce((a, c) => a + (c?.seconds ?? 0), 0));
+
+  const lines = [];
+  const decl = [];
+  if (firstFrameUpload > 0) decl.push(`<FIRST_FRAME>@Image${firstFrameUpload}`);
+  const withTags = refs.filter((r) => r.tag);
+  if (withTags.length) decl.push(`[# References ${withTags.map((r) => `${r.tag}@Image${refs.indexOf(r) + 1}`).join(' ')}]`.replace('[# References [# References', '[# References'));
+  if (decl.length) {
+    if (firstFrameUpload > 0) lines.push(`[# Sources <FIRST_FRAME>@Image${firstFrameUpload}]`);
+    if (withTags.length) lines.push(`[# References ${withTags.map((r) => `${r.tag}@Image${refs.indexOf(r) + 1}`).join(' ')}]`);
+    lines.push('');
+  }
+
+  const blocking = String(seg?.blocking ?? '').trim();
+  if (blocking) lines.push(`Blocking: ${blocking}`, '');
+
+  cuts.forEach((cut, ci) => {
+    const lo = starts[ci] ?? 0;
+    const hi = r1(lo + (cut?.seconds ?? 0));
+    const bits = [];
+    const cam = omniCamera(cut?.camera);
+    if (cam) bits.push(cam);
+    const size = SHOT_SIZES[cut?.size]?.phrase;
+    if (size) bits.push(size);
+    if (cut?.lens) bits.push(`${cut.lens} lens`);
+    if (cut?.cameraPosition) bits.push(`camera position: ${cut.cameraPosition}`);
+    if (cut?.composition) bits.push(`composition: ${cut.composition}`);
+    const shot = String(cut?.shotOmni ?? '').trim() || (CJK.test(String(cut?.shot ?? '')) ? '' : String(cut?.shot ?? '').trim());
+    const tag = frameTag.get(ci);
+    const desc = shot ? `${shot}${tag ? ` (match the composition of ${tag})` : ''}` : '';
+    const core = [desc, bits.join(', ')].filter(Boolean).join('. ');
+    lines.push(`[${lo}-${hi}s] ${core || 'Hold on the scene.'}`);
+    if (cut?.lighting) lines.push(`   Lighting: ${cut.lighting}`);
+    if (cut?.eyeline) lines.push(`   Eyeline: ${cut.eyeline}`);
+    if (cut?.focus) lines.push(`   Focus: ${cut.focus}`);
+    const [from, to] = cut?.beats ?? [];
+    const spoken = scene && Number.isInteger(from) && Number.isInteger(to)
+      ? scene.beats.slice(from - 1, to).filter((b) => b.kind === 'line')
+      : [];
+    for (const b of spoken) {
+      const who = b.speaker === 'VO' ? 'Voice-over (off screen)' : `Character ${b.speaker}`;
+      lines.push(`   ${who}: "${b.text}"`);
+    }
+  });
+
+  const soundscape = String(seg?.soundscape ?? '').trim();
+  const music = String(seg?.music ?? '').trim();
+  if (soundscape) lines.push('', `Sound design: ${soundscape}.`);
+  if (music) lines.push(`Music: ${music}.`);
+
+  const rules = [...constraints.map((c) => String(c).trim()).filter(Boolean)];
+  if (!rules.some((r) => /subtit|字幕/i.test(r))) rules.push(OMNI_NO_SUBTITLES);
+  rules.push(OMNI_SINGLE_SCENE);
+  lines.push('', 'Constraints:', ...rules.map((r, i) => `${i + 1}. ${r}.`));
+
+  const head = `Generate one ${total}-second video segment as a single continuous piece. Live-action cinematic short-drama look, photorealistic, high detail.`;
+  const tail = refs.length
+    ? (firstFrameUpload > 0
+        ? `Use Image${firstFrameUpload} as the literal starting frame. Use the other reference images for character and scene consistency only — they must not appear as literal frames.`
+        : 'Use the given images as references for character and scene consistency. They must not be used as literal initial frames.')
+    : '';
+  const prompt = [head, '', lines.join('\n').trim(), tail ? `\n${tail}` : ''].join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+  return { prompt, refs };
+}
+
+/* ------------------------------------------------------------------ */
 /* 剧本节拍展开                                                          */
 /* ------------------------------------------------------------------ */
 /*
@@ -534,7 +696,7 @@ export function gateReport(board, ctx = {}) {
   const bad = {
     coverage: [], segCap: [], cutLen: [], fit: [], duration: [], crowd: [],
     id: [], size: [], camera: [], frame: [], names: [], refs: [],
-    h3s: [], h3d: [], h3e: [], recipe: [], comp: [], sd: [],
+    h3s: [], h3d: [], h3e: [], recipe: [], comp: [], sd: [], omni: [],
   };
   // 配方卡库是可选挂载：ctx.recipes 为空就整门跳过（不是「没有 cut 带 recipe」就跳过）
   const recipes = ctx.recipes ?? null;
@@ -658,6 +820,28 @@ export function gateReport(board, ctx = {}) {
           }
           for (const name of banned) {
             if (shot.includes(name)) bad.names.push(`${cid} 的 Seedance 镜头正文出现角色名「${name}」`);
+          }
+        }
+
+        // Omni 镜头正文：优先读 cut.shotOmni（英文）；没写就退回查 cut.shot——
+        // shot 本身是英文时直接视为合格（H3 英文提示词路线复用），中文 shot 喂 Omni
+        // 会触发官方未评测语言的风险，所以要求该切带分镜图提示词（齐图路径下构图由
+        // 首帧 + 参考图锁定，正文缺省可接受）。逐镜禁项照旧检查。
+        const omniShot = String(cut?.shotOmni ?? '').trim();
+        if (omniShot) {
+          if (CJK.test(omniShot)) bad.omni.push(`${cid} 的 shotOmni 含中文——Omni 镜头正文要写英文（官方仅评测英文提示词）`);
+          for (const [re, what] of OMNI_FORBIDDEN) {
+            if (re.test(omniShot)) bad.omni.push(`${cid} 的 shotOmni 写了${what}（Omni 由程序套时间码与引用）`);
+          }
+        } else if (!String(shot).trim()) {
+          // shot 与 shotOmni 都缺省——构图完全交给分镜图提示词，必须有 frame
+          if (!String(cut?.frame ?? '').trim()) bad.omni.push(`${cid} 既无 shot/shotOmni 也无分镜图提示词——Omni 至少要有镜头正文或 frame`);
+        } else if (CJK.test(shot)) {
+          if (!String(cut?.frame ?? '').trim()) bad.omni.push(`${cid} 只有中文 shot 且无分镜图提示词——走 Omni 需补 shotOmni（英文）或 frame`);
+        } else {
+          // 英文 shot：直接当 Omni 正文用，禁项同样要过
+          for (const [re, what] of OMNI_FORBIDDEN) {
+            if (re.test(shot)) bad.omni.push(`${cid} 的 shot 写了${what}（Omni 由程序套时间码与引用）`);
           }
         }
 
@@ -786,6 +970,7 @@ export function gateReport(board, ctx = {}) {
   add('prompt-no-names', '视频提示词不含角色名（H3 正文与 Seedance 镜头正文；分镜图提示词直呼其名放行）', bad.names.length === 0, banned.length ? bad.names.join('；') : SKIP_NAMES);
   add('composition', '构图量化字段齐全（每段 blocking；每镜焦距／机位／构图／视线落点／焦点／稳定性）', eps.length > 0 && bad.comp.length === 0, bad.comp.join('；'));
   add('seedance-shot', 'Seedance 镜头正文中文非空，不写时间、镜头编号、图片引用和协议符号', eps.length > 0 && bad.sd.length === 0, bad.sd.join('；'));
+  add('omni-shot', 'Omni 镜头正文为英文（官方仅评测英文提示词），不写时间码、镜头编号、图片引用和协议符号', eps.length > 0 && bad.omni.length === 0, bad.omni.join('；'));
   add('refs', '场次／人物／道具对账剧本', bad.refs.length === 0, script ? bad.refs.join('；') : SKIP_SCRIPT);
   // 可选挂载的门放最后：没给 --shots 就跳过；给了但全篇没引用配方也算通过，但要明说，不静默
   add(
@@ -890,10 +1075,13 @@ export function seedFromScript(script, epRange = null) {
  *   按 Picture 序列出该段要挂的分镜图、秒数、缺图标注
  * - Seedance：E01-01/seedance.md（程序拼的提示词）+ 附件，根部 seedance-manifest.json
  *   按 @图片 编号列出每个附件——分镜图就是包里的 f<k>.png，设定图拷成 ref-<n>.png
+ * - Omni Flash（Google Flow）：E01-01/omni.md + omni-request.json（可直接 POST 的
+ *   Interactions API 请求体），根部 omni-manifest.json——首帧走 <FIRST_FRAME>，
+ *   其余附件按上传序编 <IMAGE_REF_k>
  *
  * 纯函数返回文件清单与要拷的设定图，落盘在 CLI 层——可测性。
  *
- * @param opts.protocol     'h3'（默认）| 'seedance'
+ * @param opts.protocol     'h3'（默认）| 'seedance' | 'omni'
  * @param opts.imageExists  包内相对路径 → 是否已有（分镜图）
  * @param opts.sheetExists  设定图文件名 → 是否找得到（Seedance 参考图路径用）
  * @param opts.names        { scene, char, prop } → 显示名；opts.constraints 全局约束
@@ -911,6 +1099,38 @@ export function exportPack(
   let missingTotal = 0;
   for (const ep of board?.episodes ?? []) {
     for (const seg of ep?.segments ?? []) {
+      if (protocol === 'omni') {
+        const scene = expanded.get(ep.ep)?.scenes?.[seg.sceneIndex - 1] ?? null;
+        const image = (kind, rel) => (kind === 'frame' && imageExists(`${prefix}${rel}`) ? rel : null);
+        const { prompt, refs } = omniPrompt(seg, { scene, names, image, constraints });
+        const attachments = refs.map((r, i) => {
+          const path = r.kind === 'frame' ? `${prefix}${r.file}` : `${prefix}${seg.id}/ref-${i + 1}.png`;
+          const present = r.kind === 'frame' ? imageExists(path) : sheetExists(r.file);
+          if (r.kind === 'sheet' && present) copies.push({ file: r.file, to: path });
+          const role = r.tag === undefined && refs.findIndex((x) => x.kind === 'frame') === i
+            ? '<FIRST_FRAME>' : (r.tag ?? '');
+          return { image: `Image${i + 1}`, role, label: r.label, kind: r.kind, path, source: r.file, present };
+        });
+        const missing = attachments.filter((a) => !a.present).map((a) => a.path);
+        missingTotal += missing.length;
+        const head = attachments.length
+          ? attachments.map((a) => `- ${a.image} ${a.role || '(未引用)'} = ${a.label} → ${a.path.slice(prefix.length + seg.id.length + 1)}${a.present ? '' : '（缺）'}`).join('\n')
+          : '- （无附件，纯文生视频）';
+        // 可直接 POST 的 Interactions API 请求体模板：图片 data 留空占位，替换后即可发送
+        const request = {
+          model: 'gemini-omni-1.1-flash',
+          input: [
+            ...attachments.map((a) => ({ type: 'image', data: `<BASE64:${a.path}>`, mime_type: 'image/png' })),
+            { type: 'text', text: prompt.trimEnd() },
+          ],
+          response_format: { type: 'video', aspect_ratio: '9:16', resolution: '720p' },
+        };
+        const md = `# ${seg.id} · Omni Flash（Google Flow）提示词\n\n附件按上传顺序对应正文里的 Image N / 引用标记；在 Flow 里按下列顺序挂载，用 API 时直接取 omni-request.json（把 data 占位符换成 base64）：\n\n${head}\n\n总时长 ${segSeconds(seg)} 秒，正文时间码由分镜结构推导。画风层已内嵌首行，可在提交前改写。\n\n---\n\n${prompt}\n`;
+        files.push({ path: `${prefix}${seg.id}/omni.md`, content: md });
+        files.push({ path: `${prefix}${seg.id}/omni-request.json`, content: JSON.stringify(request, null, 2) + '\n' });
+        manifest.push({ segment: seg.id, seconds: segSeconds(seg), cuts: (seg.cuts ?? []).length, prompt: `${prefix}${seg.id}/omni.md`, request: `${prefix}${seg.id}/omni-request.json`, attachments, missing });
+        continue;
+      }
       if (protocol === 'seedance') {
         const scene = expanded.get(ep.ep)?.scenes?.[seg.sceneIndex - 1] ?? null;
         const image = (kind, rel) => (kind === 'frame' && imageExists(`${prefix}${rel}`) ? rel : null);
@@ -953,7 +1173,7 @@ export function exportPack(
       });
     }
   }
-  const manifestName = protocol === 'seedance' ? 'seedance-manifest.json' : 'manifest.json';
+  const manifestName = protocol === 'seedance' ? 'seedance-manifest.json' : protocol === 'omni' ? 'omni-manifest.json' : 'manifest.json';
   files.push({ path: `${prefix}${manifestName}`, content: JSON.stringify(manifest, null, 2) + '\n' });
   return { files, manifest, missingTotal, copies };
 }
@@ -1000,6 +1220,7 @@ const GATE_LABELS_EN = {
   'prompt-no-names': 'Video prompts carry no character names (H3 body and Seedance shot text; frame prompts name characters on purpose)',
   'composition': 'Composition fields complete (blocking per segment; lens / camera position / composition / eyeline / focus / stability per cut)',
   'seedance-shot': 'Seedance shot text is Chinese and non-empty, with no timings, shot numbers, image references or protocol symbols',
+  'omni-shot': 'Omni shot text is English (official docs only evaluate English prompts), with no timecodes, shot numbers, image references or protocol symbols',
   'refs': 'Scenes / characters / props audited against the script',
   'shot-recipe': 'Referenced recipes exist, their must-phrases are in the frame prompt, multi-cut recipes run long enough',
 };
@@ -1012,15 +1233,52 @@ const GATE_SKIPS_EN = {
     '未挂载配方卡库（--shots <卡片目录>），本门跳过（视为通过）': 'no recipe card library mounted (--shots <cards dir>) — gate skipped (treated as passing)',
     '本批分镜没有引用配方': 'no cut in this batch references a recipe',
 };
-/** 报告里的门文案：英文界面取映射，未命中或中文界面回落原文。 */
+/** 报告里的门文案：非中文界面取对应语言映射，未命中回落中文原文。 */
 const gateText = (g, lang) => {
-  if (lang !== 'en') return { label: g.label, detail: g.detail };
-  const en = GATE_LABELS_EN[g.id];
+  const labels = GATE_LABELS[lang];
+  const skips = GATE_SKIPS[lang];
+  if (!labels) return { label: g.label, detail: g.detail };
+  const tr = labels[g.id];
   // 阈值仍由门自己算：把中文标签里出现的数字按序填进 {0} {1}
   const nums = String(g.label).match(/\d+(?:\.\d+)?/g) ?? [];
-  const label = en ? en.replace(/\{(\d)\}/g, (m, i) => nums[Number(i)] ?? m) : g.label;
-  return { label, detail: GATE_SKIPS_EN[g.detail] ?? g.detail };
+  const label = tr ? tr.replace(/\{(\d)\}/g, (m, i) => nums[Number(i)] ?? m) : g.label;
+  return { label, detail: skips?.[g.detail] ?? g.detail };
 };
+
+/* 西语界面同样只做展示层翻译：门逻辑与中文诊断不动，未命中回落原文。 */
+const GATE_LABELS_ES = {
+  'coverage': 'Cada beat del guion reclamado exactamente una vez, en orden y contiguo (a nivel de corte)',
+  'segment-cap': 'Cada segmento 0 < total \u2264 {1}s (l\u00edmite de una sola generaci\u00f3n)',
+  'cut-length': 'Cada corte {0}\u2013{1}s \u2014 el ritmo de atenci\u00f3n del microdrama',
+  'dialogue-fit': 'El di\u00e1logo de los beats reclamados cabe en la duraci\u00f3n del corte',
+  'ep-duration': 'Duraci\u00f3n total del episodio dentro de ±{0}% del objetivo del guion',
+  'crowd': 'M\u00e1ximo {0} personajes por corte en pantalla; m\u00e1s requiere nota de desglose',
+  'segment-id': 'IDs de segmento en formato E01-01, consecutivos',
+  'size-phrase': 'La palabra china del plano aparece en el prompt del fotograma',
+  'camera-phrase': 'Movimiento de c\u00e1mara del vocabulario oficial H3, dentro de su propio pasaje [Shot k]',
+  'h3-structure': 'La l\u00ednea de alineaci\u00f3n H3 se deriva de la estructura de cortes y se audita literalmente; los tiempos de corte coinciden',
+  'h3-dialogue': 'El di\u00e1logo reclamado aparece literal en los bloques <d> de H3',
+  'h3-lang': 'El idioma del prompt coincide con la configuraci\u00f3n promptLang',
+  'frame-prompt': 'Los prompts de fotograma son en chino y no est\u00e1n vac\u00edos',
+  'prompt-no-names': 'Los prompts de v\u00eddeo no llevan nombres de personaje (cuerpo H3 y texto de toma Seedance; los prompts de fotograma los nombran a prop\u00f3sito)',
+  'composition': 'Campos de composici\u00f3n completos (blocking por segmento; lente / posici\u00f3n de c\u00e1mara / composici\u00f3n / l\u00ednea de mirada / foco / estabilidad por corte)',
+  'seedance-shot': 'El texto de toma Seedance es chino y no vac\u00edo, sin tiempos, n\u00fameros de toma, referencias de imagen ni s\u00edmbolos de protocolo',
+  'omni-shot': 'El texto de toma Omni est\u00e1 en ingl\u00e9s (la documentaci\u00f3n oficial solo eval\u00faa prompts en ingl\u00e9s), sin c\u00f3digos de tiempo, n\u00fameros de toma, referencias de imagen ni s\u00edmbolos de protocolo',
+  'refs': 'Escenas / personajes / props auditados contra el guion',
+  'shot-recipe': 'Las recetas referenciadas existen, sus frases obligatorias est\u00e1n en el prompt del fotograma y las recetas multi-corte tienen la longitud adecuada',
+};
+const GATE_SKIPS_ES = {
+    '\u672a\u63d0\u4f9b outline.json\uff0c\u672c\u95e8\u8df3\u8fc7\uff08\u89c6\u4e3a\u901a\u8fc7\uff09': 'outline.json no proporcionado \u2014 puerta omitida (se considera superada)',
+    '\u672a\u63d0\u4f9b art.json\uff0c\u672c\u95e8\u8df3\u8fc7\uff08\u89c6\u4e3a\u901a\u8fc7\uff09': 'art.json no proporcionado \u2014 puerta omitida (se considera superada)',
+    '\u672a\u63d0\u4f9b script.json\uff0c\u672c\u95e8\u8df3\u8fc7\uff08\u89c6\u4e3a\u901a\u8fc7\uff09': 'script.json no proporcionado \u2014 puerta omitida (se considera superada)',
+    '\u672a\u63d0\u4f9b outline/cast\uff0c\u672c\u95e8\u8df3\u8fc7\uff08\u89c6\u4e3a\u901a\u8fc7\uff09': 'outline/cast no proporcionados \u2014 puerta omitida (se considera superada)',
+    '\u672a\u63d0\u4f9b cast.json\uff0c\u672c\u95e8\u8df3\u8fc7\uff08\u89c6\u4e3a\u901a\u8fc7\uff09': 'cast.json no proporcionado \u2014 puerta omitida (se considera superada)',
+    '\u672a\u6302\u8f7d\u914d\u65b9\u5361\u5e93\uff08--shots <\u5361\u7247\u76ee\u5f55>\uff09\uff0c\u672c\u95e8\u8df3\u8fc7\uff08\u89c6\u4e3a\u901a\u8fc7\uff09': 'sin biblioteca de tarjetas de receta montada (--shots <dir>) \u2014 puerta omitida (se considera superada)',
+    '\u672c\u6279\u5206\u955c\u6ca1\u6709\u5f15\u7528\u914d\u65b9': 'ning\u00fan corte de este lote referencia una receta',
+};
+/** 各语言的门标签／跳过提示映射；缺表的语言（zh）回落原文。 */
+const GATE_LABELS = { en: GATE_LABELS_EN, es: GATE_LABELS_ES };
+const GATE_SKIPS = { en: GATE_SKIPS_EN, es: GATE_SKIPS_ES };
 
 const I18N = {
   zh: {
@@ -1153,10 +1411,75 @@ const I18N = {
     unitCut: 'cuts',
     colophon: 'Cut by the model from the script: a segment = one generation call (≤15s), a cut = a 2–5s edit inside it, one keyframe per cut. Alignment lines, cut marks, dialogue and prompt discipline are all audited deterministically by the script. Frames are generated through codex with the scene and character sheets as references.',
   },
+  es: {
+    langCode: 'es',
+    kicker: 'Guion técnico',
+    docTitle: (s, a, b) => `${s} · Guion técnico (${a === b ? `Episodio ${a}` : `Episodios ${a}–${b}`})`,
+    epRange: (a, b) => (a === b ? `Episodio ${a}` : `Episodios ${a}–${b}`),
+    exportJson: 'Exportar JSON',
+    gatesPass: 'Todo aprobado',
+    gatesFail: (n) => `${n} sin aprobar`,
+    gatePill: (okN, total) => `Puertas de calidad ${okN} / ${total}`,
+    kpi: {
+      segments: 'Segmentos', segmentsSub: (cap) => `una llamada de generación cada uno, tope ${cap}s`,
+      cuts: 'Planos', cutsSub: (avg) => `media de ${avg}s por plano`,
+      time: 'Duración estimada', timeSub: (t) => `objetivo ${t}`,
+      batches: 'Lotes de generación', batchesSub: 'misma escena + iluminación comparten una referencia de entorno',
+      lines: 'Segmentos con diálogo', linesSub: 'el resto es solo imagen',
+    },
+    secRhythm: 'Franja de ritmo de planos',
+    secSegments: 'Tarjetas de segmento',
+    secBatches: 'Lotes de generación',
+    secDialogue: 'Alineación de audio',
+    secGates: 'Puertas de calidad',
+    rhythmNote: 'separadores gruesos = límites de segmento · ancho = peso del plano · más oscuro = plano más cerrado',
+    segmentsNote: 'un segmento = una generación: el fotograma maestro fija 0.00s, los sub-fotogramas fijan sus propios cortes',
+    batchesNote: 'calculado automáticamente · los segmentos de un lote comparten una imagen de referencia de entorno',
+    dialogueNote: 'calculado automáticamente · en qué segmento y plano cae cada clip TTS',
+    epHead: (nSeg, nCut, total, target) => `${nSeg} segmentos ${nCut} planos · ${total}s totales / objetivo ${target}s`,
+    segHead: (total, n) => `${total}s · ${n} planos`,
+    secBadge: (secs, n) => `${secs}s · ${n} planos`,
+    rhythmVal: (nSeg, nCut, secs) => `${nSeg} seg ${nCut} planos · ${secs}s`,
+    beatsLabel: (s, from, to) => `Escena ${s} · ${from === to ? `beat ${from}` : `beats ${from}–${to}`}`,
+    masterLabel: 'fotograma maestro',
+    subLabel: (i) => `sub-fotograma ${i}`,
+    frameMissing: (i) => `#${i} sin generar`,
+    framePrompt: 'Prompt de fotograma',
+    h3Prompt: 'Prompt H3',
+    h3Section: 'Prompt de vídeo H3',
+    seedancePrompt: 'Prompt Seedance',
+    seedanceSection: 'Prompt de vídeo Seedance',
+    blockingLabel: 'Blocking',
+    compLine: (c) => [c.lens, c.cameraPosition, c.composition, c.eyeline && `mirada ${c.eyeline}`, c.focus && `foco ${c.focus}`, ({ stable: 'estable', 'slight-shake': 'temblor leve', handheld: 'en mano' })[c.stability] ?? c.stability].filter(Boolean).join(' · '),
+    showSegs: '▾ Mostrar todos los segmentos',
+    hideSegs: '▴ Colapsar',
+    copy: 'Copiar', copied: 'Copiado', copyFailed: 'Error al copiar',
+    dialogueCols: ['Segmento · plano', 'Hablante', 'Réplica', 'Segundos'],
+    cutCols: ['Plano', 'Inicio', 'Seg', 'Tamaño', 'Cámara', 'Receta', 'Imagen', 'Personajes'],
+    batchCols: ['Escena', 'Iluminación', 'Segmentos', 'Personajes necesarios', 'Props'],
+    atSec: (t) => `desde ${t.toFixed(2)}s`,
+    batchLabel: (num) => `Lote ${num}`,
+    batchNeed: (chars, props) => `Necesita: ${chars.length ? `fichas de personaje de ${chars.join(', ')}` : 'sin personajes (plano vacío)'}${props.length ? ' · ' + props.join(', ') : ''}`,
+    voiceOver: 'Voz en off',
+    listSep: ', ',
+    sizeName: (size) => SHOT_SIZES[size]?.phrase ?? size,
+    cameraLabel: (camera) => camera,
+    recipeNone: '—',
+    recipeName: (card, id) => card?.name_en ?? card?.name ?? id,
+    recipeDrift: (sizes, cameras) =>
+      `La receta sugiere ${[sizes.length ? `tamaño ${sizes.join(' / ')}` : '', cameras.length ? `cámara ${cameras.join(' / ')}` : ''].filter(Boolean).join(' · ')} — orientativo, no es puerta`,
+    recipeHint: (n) => `ℹ️ ${n} plano(s) se desvían del tamaño / cámara sugeridos por su receta — una receta es vocabulario, no ley: solo orientativo (marca ≠ en la columna Receta)`,
+    speakerLine: (name, text) => `${name}: «${text}»`,
+    withLighting: (name, lighting) => (lighting ? `${name} (${lighting})` : name),
+    fmtMin: (sec) => `${Math.floor(sec / 60)} min ${Math.round(sec % 60)} s`,
+    unitSeg: 'seg',
+    unitCut: 'planos',
+    colophon: 'Recortado por el modelo a partir del guion: un segmento = una llamada de generación (≤15s), un plano = un corte de 2–5s dentro de él, un fotograma clave por plano. Las líneas de alineación, los tiempos de corte, el diálogo y la disciplina de prompts se auditan de forma determinista por el script. Los fotogramas se generan vía codex con las fichas de escena y de personaje como referencias.',
+  },
 };
 
 const tOf = (lang) => {
-  if (lang && !I18N[lang]) throw new Error('报告界面语言目前内置 zh / en');
+  if (lang && !I18N[lang]) throw new Error('报告界面语言目前内置 zh / en / es');
   return I18N[lang ?? 'zh'];
 };
 
@@ -1805,12 +2128,14 @@ const USAGE = `novel-storyboard.mjs — novel-storyboard skill 的确定性工�
          [--frames <dir>]                     分镜图目录，找 <dir>/<段号>/f<切序>.png（默认当前目录）
          [--images <dir>]                     场景设定图目录，找 <dir>/<场景 slug>-sheet.png（默认 ./images）
                                               两个目录都可以是任意路径；报告里的图片路径按「报告写在当前目录」计算
-         [--lang zh|en]                       报告界面语言（默认 zh；未指定时读取 JSON 顶层 lang 字段）
+         [--lang zh|en|es]                    报告界面语言（默认 zh；未指定时读取 JSON 顶层 lang 字段）
          [--shots <卡片目录>]                  报告的「配方」列显示卡名并标注建议景别／运镜的偏离
          [--constraints <file>]               Seedance 全局约束，一行一条（程序补上无字幕、多人禁双胞胎）
   export <sb.json> --script <script.json>     导出投产包，每段一个文件夹
-         [--protocol h3|seedance]             h3（默认）：<段号>/prompt.md + f1..fN.png，根部 manifest.json
+         [--protocol h3|seedance|omni]        h3（默认）：<段号>/prompt.md + f1..fN.png，根部 manifest.json
                                               seedance：<段号>/seedance.md + 附件，根部 seedance-manifest.json
+                                              omni（Google Flow / Gemini Omni Flash 1.1）：
+                                              <段号>/omni.md + omni-request.json + 附件，根部 omni-manifest.json
          [--out .]                            输出目录
          [--frames <dir>]                     从这里把 <段号>/f<切序>.png 拷进投产包；不给就只认包里现成的图
          [--images <dir>]                     Seedance 参考图路径的设定图目录（默认 ./images），找到就拷进包
@@ -1946,7 +2271,7 @@ function main(argv) {
 
   if (cmd === 'render') {
     const [path] = rest;
-    if (!path) throw new Error('用法：render <storyboard.json> --script <script.json> [--html|--md] [--lang zh|en] [--outline] [--art]');
+    if (!path) throw new Error('用法：render <storyboard.json> --script <script.json> [--html|--md] [--lang zh|en|es] [--outline] [--art]');
     const board = readJson(path);
     const ctx = loadCtx(rest);
     if (!ctx.script) throw new Error('分镜离开剧本没有意义——必须给 --script <script.json>');
@@ -1972,7 +2297,7 @@ function main(argv) {
     if (!ctx.script) throw new Error('分镜离开剧本没有意义——必须给 --script <script.json>');
     const dir = flag(rest, '--out', '.');
     const protocol = flag(rest, '--protocol', 'h3');
-    if (!['h3', 'seedance'].includes(protocol)) throw new Error(`--protocol 只能是 h3 或 seedance，实际是 ${protocol}`);
+    if (!['h3', 'seedance', 'omni'].includes(protocol)) throw new Error(`--protocol 只能是 h3、seedance 或 omni，实际是 ${protocol}`);
     // 分镜图在哪由用户指定：给了 --frames 就把找得到的拷进包里，不要求用户先手动放进去
     const framesFlag = flag(rest, '--frames');
     let copied = 0;
@@ -2013,6 +2338,14 @@ function main(argv) {
       if (framesFlag) console.log(`  从 ${resolve(framesFlag)} 拷入 ${copied} 张分镜图`);
       if (pack.missingTotal) console.log(`⚠️ 缺 ${pack.missingTotal} 个附件，已在 seedance-manifest.json 的 missing 里标注——提交前先补齐`);
       console.log('  视觉风格（画风层）不在包里，提交时附加');
+      return;
+    }
+    if (protocol === 'omni') {
+      console.log(`✓ ${segN} 段 Omni Flash（Google Flow）投产包 → ${resolve(dir)}/（每段一个文件夹：omni.md + omni-request.json + 附件；根部 omni-manifest.json）`);
+      if (pack.copies.length) console.log(`  从 ${sheetsDir} 拷入 ${pack.copies.length} 张设定图`);
+      if (framesFlag) console.log(`  从 ${resolve(framesFlag)} 拷入 ${copied} 张分镜图`);
+      if (pack.missingTotal) console.log(`⚠️ 缺 ${pack.missingTotal} 个附件，已在 omni-manifest.json 的 missing 里标注——提交前先补齐`);
+      console.log('  在 Flow 里按 omni.md 的顺序挂图粘贴正文；走 API 就把 omni-request.json 的图片占位符换成 base64 直接 POST');
       return;
     }
     console.log(`✓ ${segN} 段投产包 → ${resolve(dir)}/（每段一个文件夹：分镜图 + prompt.md；根部 manifest.json）`);

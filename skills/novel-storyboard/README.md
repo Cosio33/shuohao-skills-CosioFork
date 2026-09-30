@@ -22,7 +22,7 @@
 
 ![storyboard-report.html](assets/report.webp)
 
-## 质量门：18 道，全是代码
+## 质量门：19 道，全是代码
 
 与仓库里另外四个 skill 同一主张：**checklist 交给模型自觉是靠不住的**。
 
@@ -44,6 +44,7 @@
 | 视频提示词不含角色名 | H3 正文（中英文模式都查）和 Seedance 镜头正文不许出现角色名与别名——H3 与 Seedance 官方规范的要求。给 `--outline` / `--cast` 才查，不给**明说跳过** |
 | **构图量化字段** | 每段有 `blocking`；每镜焦距／机位／构图／视线落点／焦点／稳定性齐全，稳定性在枚举里 |
 | **Seedance 镜头正文** | 每镜 `shot` 中文非空，不写秒数与时间码、镜头编号、图片引用、H3 标记和 `{}` `<>` `（）`——这些由程序按真实结构加 |
+| **Omni 镜头正文** | 走 Google Flow 的切：`shotOmni`（若有）必须英文且不写时间码、镜头编号、图片引用和协议符号；只有中文 `shot` 又没 `shotOmni` 时必须有分镜图提示词 `frame`（构图交给首帧/参考图） |
 | 引用对账 | 场次/人物/道具全部对账剧本该场 |
 | **镜头配方**（可选挂载） | 给了 `--shots <卡片目录>` 才查：cut 的 `recipe` id 在卡库里、卡片的每条必备短语出现在该切的分镜图提示词里、多格配方的连排格数够。不给 `--shots` **明说跳过**；给了但全篇没引用配方也明说 |
 
@@ -111,17 +112,21 @@ node scripts/novel-storyboard.mjs render sb.json --html \
      --script script.json --outline outline.json --art art.json > storyboard-report.html
 node scripts/novel-storyboard.mjs render sb.json --html --lang en \
      --script script.json --outline outline.json --art art.json > storyboard-report.html   # 英文界面报告
+node scripts/novel-storyboard.mjs render sb.json --html --lang es \
+     --script script.json --outline outline.json --art art.json > storyboard-report.html   # 西班牙语界面报告
 node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 投产包
+node scripts/novel-storyboard.mjs export sb.json --script script.json --protocol seedance  # Seedance 投产包
+node scripts/novel-storyboard.mjs export sb.json --script script.json --protocol omni      # Google Flow / Omni 投产包
 ```
 
-`export` 的投产结构固定：**每段一个文件夹** `E01-01/`——分镜图 `f1..fN.png` 和 `prompt.md` 同住（头部 Picture ↔ 文件对照表**明确 f1.png 是首帧**、各图钉在第几秒，分隔线以下是 h3Prompt 原样），根部 `manifest.json` 带 Picture 序图清单、切点时刻表、缺图标注。一个段文件夹 = 一次 H3 生成的全部材料。
+`export` 的投产结构固定：**每段一个文件夹** `E01-01/`——分镜图 `f1..fN.png` 和 `prompt.md` 同住（头部 Picture ↔ 文件对照表**明确 f1.png 是首帧**、各图钉在第几秒，分隔线以下是 h3Prompt 原样），根部 `manifest.json` 带 Picture 序图清单、切点时刻表、缺图标注。一个段文件夹 = 一次 H3 生成的全部材料。`--protocol seedance` 换成每段 `seedance.md`；`--protocol omni` 出每段 `omni.md`（提示词整段可粘进 Google Flow）+ `omni-request.json`（`gemini-omni-1.1-flash` 现成请求体，9:16/720p）+ 根部 `omni-manifest.json`（首帧 `<FIRST_FRAME>` 与参考图 `<IMAGE_REF_k>` 的角色对照）。
 
 ## 边界
 
 - 不写戏不改台词、不出设定图、不做视频生成与剪辑合成
 - 口型/唇形同步暂不管——那是生成管线的事
 - 秒数是**下给视频模型的生成时长**不是估算；段上限、分镜节奏区间都在 `params` 里按模型调
-- 报告界面内置中英（`--lang`，默认中文）；提示词语言由 `promptLang` 单独控制（默认英文）
+- 报告界面内置中英西（`--lang zh|en|es`，默认中文）；提示词语言由 `promptLang` 单独控制（默认英文）
 - 分镜图默认先出第一段的整套（3–5 张）看效果，确认画风和构图再往后补——一集约 30–40 格，方向错了整批重来
 
 ## 文件
@@ -130,10 +135,12 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 投
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-storyboard.mjs   seed / validate / checkup / render / export / slug
-  selftest.mjs           323 项断言，不调模型
+  selftest.mjs           344 项断言，不调模型
 references/
   schema.md              storyboard.json 结构 + 时长约束链
   h3-prompt.md           H3 提示词写法规范（官方方法论内化版）
+  seedance-prompt.md     Seedance 提示词写法规范（火山引擎指南内化版）
+  omni-flash-prompt.md   Google Flow / Omni Flash 1.1 提示词写法规范（官方文档内化版）
   storyboard-pass.md     切镜：分段规则、导演运镜手感、常见病
   frame.md               分镜图的提示词与挂图合同
   report-style.md        报告的设计约定
@@ -149,6 +156,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-323 项断言，覆盖节拍展开 / H3 骨架推导 / Seedance 拼装 / 统计与批次 / 质量门逐项击穿 / 配方卡库解析与挂载 / seed / 渲染（含中英界面）/ H3 与 Seedance 导出。不调模型、不花额度、1 秒跑完。改完脚本先跑这个。
+344 项断言，覆盖节拍展开 / H3 骨架推导 / Seedance 拼装 / Omni 拼装与镜头正文门击穿 / 统计与批次 / 质量门逐项击穿 / 配方卡库解析与挂载 / seed / 渲染（含中英西界面）/ H3、Seedance 与 Omni 导出。不调模型、不花额度、1 秒跑完。改完脚本先跑这个。
 
 **只在 macOS + Node 24 上实测过。** 代码没有平台相关调用，Linux 和更低版本 Node 理论上没问题，但**没验过**。

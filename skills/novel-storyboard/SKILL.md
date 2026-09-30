@@ -9,8 +9,9 @@ description: |
   references/h3-prompt.md，不依赖外部 skill）。
   产出 storyboard.json + Markdown + 单页评审报告（分镜节奏带 / 分集分镜表 / 生成批次单 /
   配音对齐单，含导出 JSON）。不出图——交付的是每格的画面提示词和它该挂哪些参考图。
-  18 道质量门全部由脚本确定性检查（第 18 道 shot-recipe 可选：挂上 shot-recipes 卡库才查，不挂就明说跳过）；
-  export 一键导出 H3 投产包（每段提示词 + 按 Picture 序的分镜图清单）。零依赖、零 API key，用当前会话额度。
+  19 道质量门全部由脚本确定性检查（第 18 道 shot-recipe 可选：挂上 shot-recipes 卡库才查，不挂就明说跳过）；
+  export 一键导出投产包，三协议可选：MiniMax H3、Seedance、Omni（Google Flow / gemini-omni-1.1-flash，
+  每段提示词 + 按 Picture 序的分镜图清单；Omni 另出现成 API 请求体）。零依赖、零 API key，用当前会话额度。
   Use when asked to 分镜、出分镜、镜头表、切镜、storyboard for AI short drama。
 allowed-tools:
   - Read
@@ -94,6 +95,8 @@ node {baseDir}/scripts/novel-storyboard.mjs seed <script.json> --eps 1-3 > <work
 
 **Seedance 提示词不用写**：`render` 报告的提示词面板和 `export --protocol seedance` 都会从上面这些字段现拼。视觉风格由调用方提交时附加，全局约束用 `--constraints <文件>` 给。
 
+**Omni（Google Flow）提示词也不用写**：`export --protocol omni` 从同一批字段现拼（英文镜头正文取 `shotOmni`，缺省退回英文 `shot`；时间码 `[0-Xs]` 按分镜秒数推导），每段出 `omni.md` + 现成 API 请求体 `omni-request.json`（模型 `gemini-omni-1.1-flash`，9:16/720p）。写法规范与附件角色声明见 `{baseDir}/references/omni-flash-prompt.md`。走 Flow 且该切只有中文 `shot` 又没分镜图时才需要补写 `shotOmni`（第 19 道门 `omni-shot` 查）。
+
 切完把 `seedScenes` 删掉。
 
 ### Step 3 — 校验 ⛔ 不能跳
@@ -104,7 +107,7 @@ node {baseDir}/scripts/novel-storyboard.mjs validate <storyboard.json> \
   [--shots </path/to/cards>]
 ```
 
-18 道质量门全是代码：节拍全覆盖（分镜级，恰好一次、按顺序、连续）、段 0 < 总秒 ≤ 15、**每切 2–5 秒**、台词装得进分镜、每集总时长在剧本目标 ±15% 内、同框 ≤ 3 人（超了必须带拆解说明）、段号 E01-01 格式连号、中文景别词在分镜图提示词里、运镜用 H3 词表且在自己的 [Shot k] 段落里、**H3 对齐指令由分镜结构推导逐字对账 + 切点时刻逐个对**、**认领台词逐字进 `<d>` 块**、**提示词语言与 promptLang 一致**（双向查：中文写成英文、英文混进中文都拦）、分镜图提示词中文非空、**视频提示词不含角色名**（H3 正文不分语言、Seedance 镜头正文都查；分镜图提示词直呼其名放行）、**构图量化字段齐全**、**Seedance 镜头正文合规**（中文非空，不写时间、镜头编号、图片引用和协议符号）、场次/人物/道具对账剧本、**镜头配方对账**（可选门，见下）。
+19 道质量门全是代码：节拍全覆盖（分镜级，恰好一次、按顺序、连续）、段 0 < 总秒 ≤ 15、**每切 2–5 秒**、台词装得进分镜、每集总时长在剧本目标 ±15% 内、同框 ≤ 3 人（超了必须带拆解说明）、段号 E01-01 格式连号、中文景别词在分镜图提示词里、运镜用 H3 词表且在自己的 [Shot k] 段落里、**H3 对齐指令由分镜结构推导逐字对账 + 切点时刻逐个对**、**认领台词逐字进 `<d>` 块**、**提示词语言与 promptLang 一致**（双向查：中文写成英文、英文混进中文都拦）、分镜图提示词中文非空、**视频提示词不含角色名**（H3 正文不分语言、Seedance 镜头正文都查；分镜图提示词直呼其名放行）、**构图量化字段齐全**、**Seedance 镜头正文合规**（中文非空，不写时间、镜头编号、图片引用和协议符号）、场次/人物/道具对账剧本、**Omni 镜头正文合规**（`shotOmni` 若有必须英文且不写时间码/编号/引用/符号；中文 shot 无 shotOmni 时必须有 frame）、**镜头配方对账**（可选门，见下）。
 
 **有违规逐条修，改完重跑，直到通过。**
 
@@ -120,7 +123,7 @@ node {baseDir}/scripts/novel-storyboard.mjs render <剧名>-storyboard.json --ht
   --script <script.json> --outline <outline.json> --art <art.json> > storyboard-report.html
 ```
 
-报告界面语言用 `--lang zh|en` 指定（优先级 `--lang` > JSON 顶层 `lang` 字段 > 默认中文）——只切界面标签，与 `promptLang`（H3 提示词语言）互相独立。`render` 用 `--frames <目录>` 找分镜图（`<目录>/<段号>/f<切序>.png`，默认当前目录）、用 `--images <目录>` 找批次单的场景设定图（`<目录>/<场景 slug>-sheet.png`，默认 `./images`），两个都可以指到任意路径——**本 skill 不产生这些文件**，下游出完图重跑一次 render 就能嵌进报告。`export --frames <目录>` 会把找得到的分镜图拷进投产包，不用手动往包里放。报告含：KPI 带、分镜节奏带（粗分隔 = 段边界、片宽 = 分镜时长占比、颜色深浅 = 景别远近、点击跳段卡）、分集分镜表（主分镜图 + 子分镜条 + 逐切分镜行 + 分镜图/H3 提示词复制按钮）、生成批次单、配音对齐单、质量门、导出 JSON。Markdown 版每段附完整 H3 提示词，直接复制可用。
+报告界面语言用 `--lang zh|en|es` 指定（优先级 `--lang` > JSON 顶层 `lang` 字段 > 默认中文）——只切界面标签，与 `promptLang`（H3 提示词语言）互相独立。`es` 为西班牙语：HTML/Markdown 报告的标题、KPI 带、质量门标签等界面文案全部翻译；提示词正文不受影响（Omni/H3 官方口径仍是英文）。`render` 用 `--frames <目录>` 找分镜图（`<目录>/<段号>/f<切序>.png`，默认当前目录）、用 `--images <目录>` 找批次单的场景设定图（`<目录>/<场景 slug>-sheet.png`，默认 `./images`），两个都可以指到任意路径——**本 skill 不产生这些文件**，下游出完图重跑一次 render 就能嵌进报告。`export --frames <目录>` 会把找得到的分镜图拷进投产包，不用手动往包里放。报告含：KPI 带、分镜节奏带（粗分隔 = 段边界、片宽 = 分镜时长占比、颜色深浅 = 景别远近、点击跳段卡）、分集分镜表（主分镜图 + 子分镜条 + 逐切分镜行 + 分镜图/H3 提示词复制按钮）、生成批次单、配音对齐单、质量门、导出 JSON。Markdown 版每段附完整 H3 提示词，直接复制可用。
 
 汇报一句话说清：几集几镜、总时长 vs 目标、几个生成批次、报告路径；没过的门明说。
 
@@ -156,7 +159,7 @@ novel-storyboard → storyboard.json （怎么拍：镜头、首帧、批次）
 
 ## 边界
 
-- 报告界面内置中英（`--lang`，默认中文）；提示词语言由 `promptLang` 单独控制（默认英文）
+- 报告界面内置中英西（`--lang zh|en|es`，默认中文）；提示词语言由 `promptLang` 单独控制（默认英文）
 - 秒数是**下给视频模型的生成时长**不是估算——段上限按你的模型改 `params.maxSegmentSeconds`，切的节奏区间改 `min/maxCutSeconds`
 - 口型/唇形同步暂不管——那是生成管线的事
 - 分镜图不追求一次到位——它是给视频模型的构图锚，构图对、资产对就够，微调交给重生成
@@ -179,7 +182,7 @@ node {baseDir}/scripts/novel-storyboard.mjs stats
 node {baseDir}/scripts/selftest.mjs
 ```
 
-323 项断言，不调模型、不花额度。18 道质量门每一道都有击穿用例。改完脚本先跑这个。
+344 项断言，不调模型、不花额度。19 道质量门每一道都有击穿用例。改完脚本先跑这个。
 
 ## 自带样例
 

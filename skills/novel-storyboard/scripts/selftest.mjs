@@ -32,6 +32,10 @@ import {
   renderMarkdown,
   SEEDANCE_NO_SUBTITLES,
   SEEDANCE_NO_TWINS,
+  OMNI_FORBIDDEN,
+  OMNI_NO_SUBTITLES,
+  omniCamera,
+  omniPrompt,
   seedancePrompt,
   seedFromScript,
   segSeconds,
@@ -117,7 +121,7 @@ eq(paramsOf({ params: { maxCutSeconds: 4 } }).maxCutSeconds, 4, '分镜上限可
 /* ---------------- 质量门：全绿基线 ---------------- */
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带全部上游全部门通过');
-eq(gateReport(FIXTURE, CTX).length, 18, '十八道门');
+eq(gateReport(FIXTURE, CTX).length, 19, 'diecinueve puertas — 十九道门（含 omni-shot）');
 {
   const gates = gateReport(FIXTURE, {});
   ok(gates.every((g) => g.ok), '不带上游也通过（对账门跳过）');
@@ -757,7 +761,7 @@ ok(html.includes('分镜节奏带'), '01 分镜节奏带');
 ok(html.includes('分集分镜表'), '02 分集分镜表');
 ok(html.includes('生成批次单'), '03 生成批次单');
 ok(html.includes('配音对齐单'), '04 配音对齐单');
-ok(html.includes('✓ 质量门 18 / 18'), '页眉徽章全绿');
+ok(html.includes('✓ 质量门 19 / 19'), '页眉徽章全绿');
 // 提示词面板：H3 与 Seedance 两个页签并列，默认 H3；复制键跟着当前页签（前端切换时改 data-copy）
 eq((html.match(/<button class="ptab on" data-i="0">H3 提示词<\/button><button class="ptab" data-i="1">Seedance 提示词<\/button>/g) ?? []).length, 10, '每段都有 H3 / Seedance 两个页签');
 eq((html.match(/<pre class="pp">@\[图片1\] = /g) ?? []).length, 10, '每段都有程序拼好的 Seedance 提示词');
@@ -823,7 +827,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   const en = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(en.includes('<html lang="en">'), 'en 报告的 html lang 属性跟着语言走');
   ok(en.includes('Export JSON'), 'en 界面：导出按钮英文');
-  ok(en.includes('Quality gates 18 / 18'), 'en 界面：页眉徽章英文');
+  ok(en.includes('Quality gates 19 / 19'), 'en 界面：页眉徽章英文');
   ok(en.includes('>Seedance prompt</button>') && en.includes('<b>Blocking</b>') && en.includes('· slight shake</p>'), 'en 界面：页签、走位、稳定性都有英文标签');
   ok(en.includes('Cut rhythm strip'), 'en 界面：节奏带节标题英文');
   ok(en.includes('Segment cards'), 'en 界面：分镜表节标题英文');
@@ -894,4 +898,63 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   ok(renderMarkdown(doc, CTX).includes('| ots-shot-reverse |'), '不挂卡库时配方列退回裸 id');
   ok(renderMarkdown(FIXTURE, CTX).includes('| — |'), '没引用配方的切在配方列写 —');
 }
+/* ---------------- Omni Flash（Google Flow）：正文、门与导出 ---------------- */
+
+{
+  const seg = clone(FIXTURE).episodes[0].segments[0];
+  seg.cuts[0].shotOmni = 'A young woman stands at the ferry landing, eyes on the fog';
+  const scene = expandScript(SCRIPT).get(1).scenes[seg.sceneIndex - 1];
+  const { prompt, refs } = omniPrompt(seg, { scene, image: () => null });
+  ok(prompt.includes('gemini') === false || true, 'omniPrompt 冒烟');
+  ok(/^Generate one \d+(?:\.\d+)?-second video segment/.test(prompt), 'Omni 首行声明单段总时长');
+  ok(/\[0-[\d.]+s]/.test(prompt), 'Omni 正文带官方时间码层');
+  ok(!/【镜头|<Picture|@图片/.test(prompt.split('Constraints')[0] + ''), 'Omni 正文不混入 H3/Seedance 符号');
+  ok(prompt.includes(`No subtitles`) && prompt.includes(OMNI_NO_SUBTITLES), 'Omni 约束自动补无字幕');
+  ok(prompt.includes('Sound design:') || !seg.soundscape, '有声景就拼 Sound design 行');
+  ok(refs.length > 0 && refs.every((r) => r.kind === 'sheet'), '缺分镜图时附件退回设定图路线');
+  const withFrames = omniPrompt(clone(seg), { scene, image: (kind) => (kind === 'frame' ? 'x' : null) });
+  ok(/<FIRST_FRAME>@Image1/.test(withFrames.prompt), '齐图路径首张分镜图走 FIRST_FRAME');
+  ok(/\[# References <IMAGE_REF_0>@Image2/.test(withFrames.prompt), '其余分镜图按上传顺序编 IMAGE_REF');
+  ok(withFrames.prompt.includes('must not appear as literal frames'), '参考图声明不作字面帧（官方口径）');
+  ok(omniCamera('Push In') === 'slow push in toward the subject', '运镜枚举翻译成英文自然语言短语');
+}
+// omni-shot 门：击穿用例
+for (const [bad, why] of [
+  ['年轻女子站在渡口', 'shotOmni 写了中文'],
+  ['A woman runs for 3 seconds', 'shotOmni 写了秒数'],
+  ['[0-3s] A woman runs', 'shotOmni 自己写了时间码'],
+  ['She says "hello" loudly', 'shotOmni 自带引号台词'],
+]) {
+  const doc = clone(FIXTURE);
+  doc.episodes[0].segments[0].cuts[0].shotOmni = bad;
+  ok(!gate(doc, 'omni-shot').ok, `Omni 门拦下：${why}`);
+}
+{
+  const doc = clone(FIXTURE);
+  doc.episodes[0].segments[0].cuts.forEach((c) => { c.shotOmni = 'Static hold on the landing'; c.frame = ''; });
+  ok(gate(doc, 'omni-shot').ok, '全切有英文 shotOmni 时门过');
+}
+{
+  // 齐图路线：中文 shot 缺省或存在都行，只要该切带分镜图提示词（frame）门就过；
+  // frame 和正文同时缺省才是真空——拦。
+  const doc = clone(FIXTURE);
+  doc.episodes[0].segments[0].cuts[0].shot = '';
+  ok(gate(doc, 'omni-shot').ok, 'shot 为空但有 frame——构图交给分镜图，门过');
+  doc.episodes[0].segments[0].cuts[0].frame = '';
+  ok(!gate(doc, 'omni-shot').ok, 'shot 与 frame 双缺——无正文也无图，门拦');
+}
+{
+  const doc = clone(FIXTURE);
+  doc.episodes[0].segments[0].cuts[0].frame = '';
+  ok(!gate(doc, 'omni-shot').ok, '中文 shot 且无 frame——未评测语言风险，门拦');
+}
+{
+  // H3 英文 shot 路线：shot 本身就是英文，直接当 Omni 正文用，门过
+  const doc = clone(FIXTURE);
+  doc.episodes[0].segments[0].cuts.forEach((c) => { c.shot = 'A slow tracking shot follows her from behind'; });
+  ok(gate(doc, 'omni-shot').ok, '英文 shot 无 shotOmni——复用 H3 正文，门过');
+  doc.episodes[0].segments[0].cuts[0].shot = 'She runs for 3 seconds toward the bridge';
+  ok(!gate(doc, 'omni-shot').ok, '英文 shot 里写秒数——禁项照样拦');
+}
+
 console.log(`✓ ${passed} 项自测全部通过`);

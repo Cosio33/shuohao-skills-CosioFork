@@ -23,7 +23,7 @@ Outputs `storyboard.json`, a Markdown shot list, and a self-contained `storyboar
 
 ![storyboard-report.html](assets/report.webp)
 
-## Eighteen quality gates, all code
+## Nineteen quality gates, all code
 
 Same stance as the other four skills in this repo: **a checklist the model grades itself on is worthless.**
 
@@ -45,6 +45,7 @@ Same stance as the other four skills in this repo: **a checklist the model grade
 | No names in video prompts | the H3 body (in either language) and the Seedance shot text carry no character names or aliases — required by both official prompt guides. Checked with `--outline` / `--cast`; skipping is **announced** |
 | **Composition fields** | `blocking` per segment; lens / camera position / composition / eyeline / focus / stability per cut, stability from the enum |
 | **Seedance shot text** | every cut's `shot` is Chinese and non-empty, with no timings, shot numbers, image references, H3 markers or `{}` `<>` `（）` — the program adds those from the real structure |
+| **Omni shot text** | for Google Flow cuts: `shotOmni` (when present) must be English with no timecodes, shot numbers, image references or protocol symbols; a cut with only a Chinese `shot` and no `shotOmni` must carry a frame prompt `frame` (composition then rides on the storyboard images) |
 | Reference integrity | scene index / characters / props all audited against the script scene |
 | **Shot recipe** (optional mount) | only checked with `--shots <cards dir>`: a cut's `recipe` id exists in the library, every must-phrase of that card appears in the cut's frame prompt, and a multi-cut recipe runs long enough. Without `--shots` the skip is **announced**; so is "no cut references a recipe" |
 
@@ -105,7 +106,10 @@ node scripts/novel-storyboard.mjs checkup sb.json --script script.json
 node scripts/novel-storyboard.mjs validate sb.json --script script.json --shots /path/to/cards   # optional: the 17th gate
 node scripts/novel-storyboard.mjs render sb.json --html --script script.json --outline outline.json --art art.json > storyboard-report.html
 node scripts/novel-storyboard.mjs render sb.json --html --lang en --script script.json --outline outline.json --art art.json > storyboard-report.html   # English report UI
+node scripts/novel-storyboard.mjs render sb.json --html --lang es --script script.json --outline outline.json --art art.json > storyboard-report.html   # Spanish report UI
 node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-segment folders: f1..fN.png + prompt.md
+node scripts/novel-storyboard.mjs export sb.json --script script.json --protocol seedance  # Seedance packs
+node scripts/novel-storyboard.mjs export sb.json --script script.json --protocol omni      # Google Flow / Omni packs (omni.md + ready-to-POST omni-request.json)
 ```
 
 ## Limits
@@ -113,7 +117,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 - No writing or rewriting dialogue, no design sheets, no video generation or editing
 - Lip-sync is out of scope for now — that belongs to the generation pipeline
 - Seconds are a **generation order, not an estimate**; tune the segment cap and cut-rhythm range in `params` per your model
-- Report UI ships in Chinese (default) and English — pick with `--lang`; the prompt language is controlled separately by `promptLang` (English by default)
+- Report UI ships in Chinese (default), English and Spanish — pick with `--lang`; the prompt language is controlled separately by `promptLang` (English by default)
 - Generate the first segment's full frame set (3–5 images) for approval before committing — one episode is ~30–40 frames, and a wrong art direction wastes the batch
 
 ## Selftest
@@ -122,7 +126,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-323 assertions — beat expansion, H3 skeleton derivation, Seedance assembly, stats and batching, gate-defeating cases, recipe-card parsing and mounting, seed, rendering (both report UI languages), H3 and Seedance export. No model calls, runs in about a second.
+344 assertions — beat expansion, H3 skeleton derivation, Seedance assembly, Omni prompt assembly and gate-defeating cases, stats and batching, recipe-card parsing and mounting, seed, rendering (all three report UI languages), H3, Seedance and Omni export. No model calls, runs in about a second.
 
 The bundled example (`examples/渡口-storyboard.json`) is a complete episode-1 storyboard — 10 segments, 34 cuts claiming all 35 script beats at ~3.5s per cut, 119s against a 120s target, 2 generation batches, every segment carrying a fully audited H3 prompt.
 
